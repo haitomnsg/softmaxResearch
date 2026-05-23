@@ -1,0 +1,29 @@
+name: as_softmax_sst5
+seed: 42
+
+dataset:
+  name: sst5
+  batch_size: 16
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: as_softmax
+  delta: 0.15          # Lv et al. report δ in 0.1–0.2 range for text tasks
+  warmup_frac: 0.1     # ramp δ from 0 to delta over first 10% of training
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 5
+  grad_clip: 1.0
+  log_every: 50
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [baseline, sst5, as_softmax]

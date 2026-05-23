@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gam_softmax"
+version = "0.0.1"
+description = "Generalized Adaptive Margin Softmax — research codebase"
+requires-python = ">=3.10"
+authors = [{ name = "Ashish Gupta", email = "haitomns4173@gmail.com" }]
+license = { text = "MIT" }
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["gam_softmax*"]
+exclude = ["tests*", "docs*", "research*", "source*", "experiments*", "configs*", "notebooks*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
