@@ -1,0 +1,28 @@
+name: label_smoothing_sst5
+seed: 42
+
+dataset:
+  name: sst5
+  batch_size: 16
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: label_smoothing
+  label_smoothing: 0.1
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 5
+  grad_clip: 1.0
+  log_every: 50
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [baseline, sst5, label_smoothing]

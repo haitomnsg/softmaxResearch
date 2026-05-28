@@ -1,0 +1,36 @@
+name: m3_classpair_lowrank_sst5
+seed: 42
+
+dataset:
+  name: sst5
+  batch_size: 16          # 6 GB VRAM ceiling (RTX 3050); matches baseline configs
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  margin:
+    type: classpair_lowrank
+    rank: 8                                       # docs §2.3 default
+    init_std: 0.02                                # σ(u·v/√k) ≈ 0.5 at init → margin near midpoint
+    schedule:
+      type: linear
+      delta_min: 0.05
+      delta_max: 0.4                              # docs §8 default recipe
+      warmup_frac: 0.3                            # ramp δ_max over first 30% of training
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 5
+  grad_clip: 1.0
+  log_every: 50
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [phase2, sst5, m3, gam_softmax]

@@ -97,8 +97,8 @@ Update this section as you make progress.
 
 | Phase | Status | Notes |
 |---|---|---|
-| Phase 0: Repo setup | not started | |
-| Phase 1: Reproduce baselines | not started | |
+| Phase 0: Repo setup | **done** | MS0–MS3 complete; gam_softmax package + 8 baselines coded & unit-tested |
+| Phase 1: Reproduce baselines | in progress | MS3 smoke ✓; full SST-5 reproduction runs still TODO |
 | Phase 2: Class-dependent margins | not started | |
 | Phase 3: Sample-dependent margins | not started | |
 | Phase 4: Time-adaptive margins | not started | |
@@ -115,6 +115,8 @@ Record every non-obvious choice you make so the paper's "why" is recoverable.
 | 2026-05-23 | Primary direction: generalized margins (extend AS-Softmax), not new function family | User decision; lower risk, builds on validated idea |
 | 2026-05-23 | Text = primary, image/audio = breadth, regression = stretch | Single-GPU constraint; conference paper needs one strong narrative |
 | 2026-05-23 | Method name: GAM-Softmax | Distinct from existing AM-Softmax, AS-Softmax; signals "generalized" |
+| 2026-05-24 | All 8 baselines implemented in one session; AM-Softmax owns its own learnable W | Cleaner than coupling the loss to the model's head; trainer pre-existing optimizer was extended to include loss params |
+| 2026-05-24 | torch 2.6.0+cu124 + transformers 5.9 in conda env `gam` | Latest stable PyTorch CUDA wheels at install time; bumped requirements.txt upper bounds to match |
 
 ## 8. How to use these docs
 
