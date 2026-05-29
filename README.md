@@ -98,8 +98,8 @@ Update this section as you make progress.
 | Phase | Status | Notes |
 |---|---|---|
 | Phase 0: Repo setup | **done** | MS0–MS3 complete; gam_softmax package + 8 baselines coded & unit-tested |
-| Phase 1: Reproduce baselines | in progress | MS3 smoke ✓; full SST-5 reproduction runs still TODO |
-| Phase 2: Class-dependent margins | not started | |
+| Phase 1: Reproduce baselines | **done** | SST-5 (3 seeds): softmax 51.1%, AS-Softmax 52.2% (AS ≥ softmax ✓). See `runs/baselines/summary.md` |
+| Phase 2: Class-dependent margins | H1 tested, no benefit | Both fixed (52.10%) and learnable (51.83%) class-pair margins tie/underperform AS-Softmax (52.17%) on SST-5. Decision pending: tune margin-LR/ste_temp, switch dataset, or pivot axis. See `runs/stage2_gam_m3_learnable/summary.md` |
 | Phase 3: Sample-dependent margins | not started | |
 | Phase 4: Time-adaptive margins | not started | |
 | Phase 5: Combined + cross-modality | not started | |
@@ -117,6 +117,15 @@ Record every non-obvious choice you make so the paper's "why" is recoverable.
 | 2026-05-23 | Method name: GAM-Softmax | Distinct from existing AM-Softmax, AS-Softmax; signals "generalized" |
 | 2026-05-24 | All 8 baselines implemented in one session; AM-Softmax owns its own learnable W | Cleaner than coupling the loss to the model's head; trainer pre-existing optimizer was extended to include loss params |
 | 2026-05-24 | torch 2.6.0+cu124 + transformers 5.9 in conda env `gam` | Latest stable PyTorch CUDA wheels at install time; bumped requirements.txt upper bounds to match |
+| 2026-05-28 | Disable memory-efficient SDP attention on CUDA in `experiments/run.py` | Its non-deterministic backward intermittently faulted mid-step on the 6 GB RTX 3050 with no Python error; forcing the flash kernel made all runs finish cleanly |
+| 2026-05-28 | Baseline epochs 5 → 3 on SST-5 | Val acc peaks at epoch 0–1 then overfits hard (~6 pt drop by epoch 4); 3 epochs captures the peak without wasted compute |
+| 2026-05-28 | Baselines reproduced: softmax 51.1%, AS-Softmax 52.2% (3 seeds); AS ≥ softmax holds | Stage 1 sanity check passed. README's ~58.4% target is a different SST-5 setup (open item), not our internal comparison |
+| 2026-05-28 | H1 verdict: **FAIL** — gam_m3 52.10% vs AS-Softmax 52.17% (−0.06%, criterion ≥ +0.3%) | gam_m3's class-pair margin is a *fixed random* low-rank matrix (u/v don't learn), so a tie is expected. Not a refutation; next step is making the margin learnable, then re-run H1. See `runs/stage2_gam_m3/summary.md` |
+| 2026-05-29 | Added learnable margin (STE flag `learnable_margin` in GAMSoftmaxLoss) so u/v actually train | Fixed-random M3 was an inconclusive test; STE keeps forward identical to AS-Softmax but routes gradient to the margin params. Unit-tested |
+| 2026-05-29 | H1 re-run with LEARNABLE margin: **FAIL** — gam_m3' 51.83% vs AS-Softmax 52.17% (−0.33%) | The real test of the core hypothesis on the class-pair axis. Learnable gap did not beat (slightly below) scalar AS-Softmax; all methods tie ~52% on SST-5. Class-pair axis shows no benefit here. Options: tune margin-LR/ste_temp, try a dataset with headroom, or pivot axis. See `runs/stage2_gam_m3_learnable/summary.md` |
+| 2026-05-29 | Tuning screen (margin_lr 1e-3/1e-2, ste_temp 0.05): under-tuning ruled out — higher margin LR monotonically **hurt** (down to 50.1%) | Added optional `margin_lr` param group in run.py. The flat H1 result is not a tuning artifact; letting the class-pair gap learn more makes it worse. Bottleneck is the testbed (SST-5 ties ~52% for all methods). Decision: stop class-pair-on-SST-5; switch dataset or pivot axis. See `runs/stage2_tuning/summary.md` |
+| 2026-05-29 | Added 20 Newsgroups loader (sklearn, headers stripped) as a discriminating testbed | SST-5 couldn't separate any method; 20NG (20 classes) reaches ~71% with real spread. New loader + 3 configs (softmax/as_softmax/gam-learnable) |
+| 2026-05-29 | 20NG screen (1 seed): GAM 71.18% > AS-Softmax 70.59% (+0.6%); softmax best at 71.46% | First positive signal for GAM>AS-Softmax. GAM was still rising at epoch 3 (overfits slower) while others peaked early. One seed, within noise; AS-Softmax < plain CE. Next: 3 seeds + more epochs. See `runs/stage2_20ng/summary.md` |
 
 ## 8. How to use these docs
 

@@ -1,0 +1,42 @@
+name: m3_learnable_mlr1e-3_temp05_sst5
+seed: 42
+
+# Tuning screen: margin_lr = 1e-3 with a sharper STE surrogate (ste_temp = 0.05,
+# closer to the hard step). Tests whether a crisper gradient to u/v helps.
+
+dataset:
+  name: sst5
+  batch_size: 16
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: true
+  ste_temp: 0.05
+  margin:
+    type: classpair_lowrank
+    rank: 8
+    init_std: 0.02
+    schedule:
+      type: linear
+      delta_min: 0.05
+      delta_max: 0.4
+      warmup_frac: 0.3
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  margin_lr: 1.0e-3
+  weight_decay: 0.01
+  epochs: 3
+  grad_clip: 1.0
+  log_every: 50
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [phase2, sst5, m3_learnable, tuning, mlr1e-3_temp05]

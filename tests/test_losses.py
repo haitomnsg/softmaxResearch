@@ -498,3 +498,49 @@ def test_gam_softmax_backprop_finite_to_classifier_and_margin_params():
 def test_gam_softmax_rejects_non_margin_fn():
     with pytest.raises(TypeError):
         GAMSoftmaxLoss(n_classes=5, margin_fn="not a margin")  # type: ignore[arg-type]
+
+
+def test_gam_softmax_learnable_margin_routes_grad_to_u_v():
+    """With learnable_margin=True the STE sends gradient into the margin's
+    u, v — the fix that turns M3's fixed-random gap into a trainable one.
+    (Contrast test_gam_softmax_backprop_finite_* which asserts the default
+    hard path does NOT.)"""
+    torch.manual_seed(0)
+    sch = LinearSchedule(delta_min=0.05, delta_max=0.4, warmup_frac=0.3)
+    m = ClassPairLowRankMargin(n_classes=5, schedule=sch, rank=4)
+    loss_fn = GAMSoftmaxLoss(n_classes=5, margin_fn=m, learnable_margin=True, ste_temp=0.1)
+
+    logits = torch.randn(8, 5, requires_grad=True)
+    targets = torch.randint(0, 5, (8,))
+    loss_fn(logits, targets, step_frac=1.0)["loss"].backward()
+
+    assert logits.grad is not None and torch.isfinite(logits.grad).all()
+    assert m.u.grad is not None and torch.isfinite(m.u.grad).all()
+    assert m.v.grad is not None and torch.isfinite(m.v.grad).all()
+    assert m.u.grad.abs().sum() > 0
+    assert m.v.grad.abs().sum() > 0
+
+
+def test_gam_softmax_learnable_margin_forward_matches_hard():
+    """STE forward value must equal the default hard-mask loss (only the
+    backward differs), so the learnable variant stays comparable to AS-Softmax."""
+    torch.manual_seed(0)
+    sch = LinearSchedule(delta_min=0.05, delta_max=0.4, warmup_frac=0.3)
+    m = ClassPairLowRankMargin(n_classes=7, schedule=sch, rank=4)
+    hard = GAMSoftmaxLoss(n_classes=7, margin_fn=m, learnable_margin=False)
+    soft = GAMSoftmaxLoss(n_classes=7, margin_fn=m, learnable_margin=True)
+
+    logits = torch.randn(16, 7)
+    targets = torch.randint(0, 7, (16,))
+    out_hard = hard(logits, targets, step_frac=0.5)
+    out_soft = soft(logits, targets, step_frac=0.5)
+
+    assert torch.allclose(out_hard["loss"], out_soft["loss"], atol=1e-5)
+    assert torch.equal(out_hard["mask"], out_soft["mask"])
+
+
+def test_gam_softmax_rejects_nonpositive_ste_temp():
+    sch = LinearSchedule(delta_min=0.05, delta_max=0.4, warmup_frac=0.3)
+    m = ClassPairLowRankMargin(n_classes=5, schedule=sch, rank=4)
+    with pytest.raises(ValueError):
+        GAMSoftmaxLoss(n_classes=5, margin_fn=m, ste_temp=0.0)

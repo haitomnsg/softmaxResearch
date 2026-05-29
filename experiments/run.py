@@ -81,6 +81,16 @@ def build_data(cfg: dict, tokenizer):
             num_workers=cfg["dataset"].get("num_workers", 0),
             limit_train=cfg["dataset"].get("limit_train"),
         )
+    if name == "20newsgroups":
+        from gam_softmax.data.text import load_20newsgroups
+
+        return load_20newsgroups(
+            tokenizer=tokenizer,
+            batch_size=cfg["dataset"]["batch_size"],
+            max_seq_len=cfg["dataset"]["max_seq_len"],
+            num_workers=cfg["dataset"].get("num_workers", 0),
+            limit_train=cfg["dataset"].get("limit_train"),
+        )
     raise ValueError(f"Unknown dataset: {name}")
 
 
@@ -102,14 +112,22 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--max-steps", type=int, default=None, help="Override training.max_steps for smoke tests")
+    ap.add_argument("--seed", type=int, default=None, help="Override cfg.seed (used by H1 multi-seed runs)")
     ap.add_argument("--device", default=None)
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    seed_everything(cfg.get("seed", 42))
+    seed = args.seed if args.seed is not None else cfg.get("seed", 42)
+    seed_everything(seed)
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[run] config={args.config}  device={device}")
+
+    # The memory-efficient SDP attention kernel has a non-deterministic backward
+    # that intermittently faults mid-step on 6 GB laptop GPUs, killing the process
+    # with no Python error. Disable it so PyTorch uses the stabler flash kernel.
+    if device == "cuda":
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
 
     tokenizer = TextClassifier.tokenizer_for(cfg["model"]["backbone"])
     data = build_data(cfg, tokenizer)
@@ -124,13 +142,23 @@ def main() -> None:
     loss_fn = build_loss(cfg, n_classes=n_classes, feature_dim=feature_dim)
 
     optim_cfg = cfg["training"]
-    # include loss params so AM-Softmax / future learnable-margin losses get optimized
-    trainable_params = list(model.parameters()) + list(loss_fn.parameters())
-    optimizer = torch.optim.AdamW(
-        trainable_params,
-        lr=optim_cfg["lr"],
-        weight_decay=optim_cfg.get("weight_decay", 0.01),
-    )
+    wd = optim_cfg.get("weight_decay", 0.01)
+    loss_params = list(loss_fn.parameters())
+    margin_lr = optim_cfg.get("margin_lr")
+    if margin_lr is not None and loss_params:
+        # give the loss/margin params their own (typically higher) LR and no weight
+        # decay, so structural params like M3's u/v can actually move at BERT's tiny LR
+        optimizer = torch.optim.AdamW([
+            {"params": list(model.parameters()), "lr": optim_cfg["lr"], "weight_decay": wd},
+            {"params": loss_params, "lr": float(margin_lr), "weight_decay": 0.0},
+        ])
+    else:
+        # include loss params so AM-Softmax / future learnable-margin losses get optimized
+        optimizer = torch.optim.AdamW(
+            list(model.parameters()) + loss_params,
+            lr=optim_cfg["lr"],
+            weight_decay=wd,
+        )
 
     trainer = Trainer(
         model=model,
@@ -145,7 +173,7 @@ def main() -> None:
         grad_clip=optim_cfg.get("grad_clip", 1.0),
     )
     state = trainer.fit()
-    print(f"[run] done. best_val_acc={state.best_val_acc:.4f}")
+    print(f"[run] done. seed={seed} best_val_acc={state.best_val_acc:.4f}")
 
 
 if __name__ == "__main__":

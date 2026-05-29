@@ -1,5 +1,10 @@
-name: m3_classpair_lowrank_sst5
+name: m3_classpair_lowrank_learnable_sst5
 seed: 42
+
+# M3' — same class-pair low-rank margin as sst5.yaml, but learnable_margin=True
+# routes gradient (via a straight-through estimator) into the margin's u/v so the
+# class-pair structure actually trains instead of staying at random init. This is
+# the variant H1 needs to test the real hypothesis (the fixed-random M3 tied AS-Softmax).
 
 dataset:
   name: sst5
@@ -13,9 +18,11 @@ model:
 
 loss:
   type: gam_softmax
+  learnable_margin: true                          # turn on the STE gradient path to u/v
+  ste_temp: 0.1                                   # sigmoid-surrogate temperature
   margin:
     type: classpair_lowrank
-    rank: 8                                       # docs §2.3 default
+    rank: 8                                        # docs §2.3 default
     init_std: 0.02                                # σ(u·v/√k) ≈ 0.5 at init → margin near midpoint
     schedule:
       type: linear
@@ -33,4 +40,4 @@ training:
 
 logging:
   wandb_project: gam-softmax
-  wandb_tags: [phase2, sst5, m3, gam_softmax]
+  wandb_tags: [phase2, sst5, m3_learnable, gam_softmax]

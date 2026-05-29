@@ -19,7 +19,7 @@ training:
   optimizer: adamw
   lr: 2.0e-5
   weight_decay: 0.01
-  epochs: 5
+  epochs: 3          # SST-5 val acc peaks at epoch 0-1 then overfits; 3 captures the peak without wasted compute
   grad_clip: 1.0
   log_every: 50
 

@@ -1,0 +1,43 @@
+name: m3_classpair_lowrank_learnable_20ng
+seed: 42
+
+# GAM-Softmax with a LEARNABLE class-pair margin on 20 Newsgroups (20 classes →
+# many class pairs with genuinely varying difficulty). Uses the original learnable
+# settings (margin shares BERT's LR, ste_temp 0.1) — the SST-5 tuning screen showed
+# a dedicated higher margin_lr hurts, so it is intentionally omitted here.
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: true
+  ste_temp: 0.1
+  margin:
+    type: classpair_lowrank
+    rank: 8
+    init_std: 0.02
+    schedule:
+      type: linear
+      delta_min: 0.05
+      delta_max: 0.4
+      warmup_frac: 0.3
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 100
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [phase2, 20ng, m3_learnable, gam_softmax]

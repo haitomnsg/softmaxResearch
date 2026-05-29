@@ -1,0 +1,43 @@
+name: m3_learnable_mlr1e-3_sst5
+seed: 42
+
+# Tuning screen: learnable class-pair margin with a dedicated higher LR for the
+# margin params (u/v). Tests whether M3' underperformed because u/v barely moved
+# at BERT's lr (2e-5). margin_lr = 1e-3 (~50x), ste_temp = 0.1.
+
+dataset:
+  name: sst5
+  batch_size: 16
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: true
+  ste_temp: 0.1
+  margin:
+    type: classpair_lowrank
+    rank: 8
+    init_std: 0.02
+    schedule:
+      type: linear
+      delta_min: 0.05
+      delta_max: 0.4
+      warmup_frac: 0.3
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  margin_lr: 1.0e-3          # dedicated LR for u/v (no weight decay on this group)
+  weight_decay: 0.01
+  epochs: 3
+  grad_clip: 1.0
+  log_every: 50
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [phase2, sst5, m3_learnable, tuning, mlr1e-3]
