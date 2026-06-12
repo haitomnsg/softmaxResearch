@@ -80,6 +80,8 @@ def build_data(cfg: dict, tokenizer):
             max_seq_len=cfg["dataset"]["max_seq_len"],
             num_workers=cfg["dataset"].get("num_workers", 0),
             limit_train=cfg["dataset"].get("limit_train"),
+            label_noise=cfg["dataset"].get("label_noise", 0.0),
+            noise_seed=cfg["dataset"].get("noise_seed", 0),
         )
     if name == "20newsgroups":
         from gam_softmax.data.text import load_20newsgroups
@@ -90,6 +92,8 @@ def build_data(cfg: dict, tokenizer):
             max_seq_len=cfg["dataset"]["max_seq_len"],
             num_workers=cfg["dataset"].get("num_workers", 0),
             limit_train=cfg["dataset"].get("limit_train"),
+            label_noise=cfg["dataset"].get("label_noise", 0.0),
+            noise_seed=cfg["dataset"].get("noise_seed", 0),
         )
     raise ValueError(f"Unknown dataset: {name}")
 
@@ -113,15 +117,20 @@ def main() -> None:
     ap.add_argument("--config", required=True)
     ap.add_argument("--max-steps", type=int, default=None, help="Override training.max_steps for smoke tests")
     ap.add_argument("--seed", type=int, default=None, help="Override cfg.seed (used by H1 multi-seed runs)")
+    ap.add_argument("--label-noise", type=float, default=None,
+                    help="Override dataset.label_noise (fraction of train labels to corrupt; used by the noise sweep)")
     ap.add_argument("--device", default=None)
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    if args.label_noise is not None:
+        cfg.setdefault("dataset", {})["label_noise"] = args.label_noise
     seed = args.seed if args.seed is not None else cfg.get("seed", 42)
     seed_everything(seed)
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[run] config={args.config}  device={device}")
+    noise = cfg.get("dataset", {}).get("label_noise", 0.0)
+    print(f"[run] config={args.config}  device={device}  label_noise={noise}")
 
     # The memory-efficient SDP attention kernel has a non-deterministic backward
     # that intermittently faults mid-step on 6 GB laptop GPUs, killing the process

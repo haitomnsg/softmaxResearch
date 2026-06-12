@@ -75,18 +75,30 @@ def load_20newsgroups(
     max_seq_len: int = 128,
     num_workers: int = 0,
     limit_train: Optional[int] = None,
+    label_noise: float = 0.0,
+    noise_seed: int = 0,
 ) -> dict:
     """Load 20 Newsgroups (sklearn) and return train/val DataLoaders.
 
     20NG ships only train/test splits; we use the official test split as the
     validation set (no separate val exists). 20 classes with genuinely varying
     pairwise difficulty — chosen as a testbed where methods can actually separate.
+
+    Set ``label_noise`` > 0 to corrupt that fraction of *training* labels
+    (symmetric noise; val stays clean) — the hard regime where masking losses
+    are expected to beat plain cross-entropy.
     """
     tr_texts, tr_labels = _fetch("train")
     va_texts, va_labels = _fetch("test")
     if limit_train is not None:
         tr_texts = tr_texts[:limit_train]
         tr_labels = tr_labels[:limit_train]
+    if label_noise and label_noise > 0.0:
+        from gam_softmax.data.label_noise import inject_label_noise
+
+        tr_labels = inject_label_noise(
+            tr_labels, NEWSGROUPS20_NUM_CLASSES, label_noise, seed=noise_seed
+        )
 
     return {
         "train": DataLoader(

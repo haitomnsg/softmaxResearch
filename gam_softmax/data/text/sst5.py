@@ -57,8 +57,15 @@ def load_sst5(
     max_seq_len: int = 128,
     num_workers: int = 0,
     limit_train: Optional[int] = None,
+    label_noise: float = 0.0,
+    noise_seed: int = 0,
 ) -> dict:
-    """Load SST-5 from HuggingFace and return train/val/test DataLoaders."""
+    """Load SST-5 from HuggingFace and return train/val/test DataLoaders.
+
+    Set ``label_noise`` > 0 to corrupt that fraction of *training* labels
+    (symmetric noise; val/test stay clean) — the hard regime where masking
+    losses are expected to beat plain cross-entropy.
+    """
     from datasets import load_dataset
 
     ds = load_dataset(SST5_HF_NAME)
@@ -67,6 +74,13 @@ def load_sst5(
     test = ds["test"]
     if limit_train is not None:
         train = train.select(range(min(limit_train, len(train))))
+    if label_noise and label_noise > 0.0:
+        from gam_softmax.data.label_noise import inject_label_noise
+
+        noisy = inject_label_noise(
+            list(train["label"]), SST5_NUM_CLASSES, label_noise, seed=noise_seed
+        )
+        train = train.map(lambda ex, i: {"label": noisy[i]}, with_indices=True)
 
     return {
         "train": DataLoader(

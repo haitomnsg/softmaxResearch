@@ -22,9 +22,59 @@ built, what's broken, and the exact next steps in order. No math required to rea
    YOU ARE HERE
         |
         v
-[engine built] -> [baselines run] -> [OUR METHOD CRASHES] -> ??? -> the rest of the project
-   (done)            (done)            (the blocker)
+[engine built] -> [baselines run] -> [crash fixed] -> [H1 tie on clean text] -> [NOISY-LABEL SWEEP] -> rest
+   (done)            (done)            (done)           (done, reassessed)        (built, run it next)
 ```
+
+---
+
+## ⏩ ACTIVE DIRECTION (updated 2026-06-12) — read this, it supersedes the older steps below
+
+**The real problem isn't the code — it's the testbed.** On clean, balanced text
+(SST-5, 20NG) the method we extend, AS-Softmax, barely matches plain cross-entropy,
+so our GAM method has no floor to build on. Margin/masking losses are *designed* for
+harder regimes. **Decision (user, 2026-06-12): test in a hard regime — noisy labels —
+where masking is supposed to win.**
+
+Why noisy labels: AS-Softmax stops pushing once the correct class wins by the margin,
+so it can't memorize wrong labels the way plain CE does. It's the cheapest hard regime
+(reuses SST-5/20NG, just corrupts a fraction of training labels) and makes a clean figure.
+
+**What's already built (this session):**
+- `gam_softmax/data/label_noise.py` — seeded symmetric label-noise utility (11 unit tests).
+- `label_noise` / `noise_seed` knobs in both data loaders; `--label-noise` override on `run.py`.
+- `experiments/noise_sweep.py` — runs softmax / AS-Softmax / GAM across noise levels × seeds,
+  writes a table with two key columns: **AS−CE** (does the foundation hold?) and **GAM−AS**
+  (does our margin help?). Smoke-tested on GPU at 40% noise — runs clean.
+
+**✅ RAN (2026-06-13). Verdict: INCONCLUSIVE — no hard-regime win.** SST-5, noise {0,0.2,0.4},
+2 seeds, all 18 runs clean (one cosmetic Unicode crash in the final print, since fixed; data intact).
+
+| noise | softmax | as_softmax | gam_m3 | AS−CE | GAM−AS |
+|---|---|---|---|---|---|
+| 0%  | 0.5104 | 0.5204 | 0.5195 | +1.0% | −0.1% |
+| 20% | 0.4869 | 0.4823 | 0.5041 | −0.5% | +2.2% |
+| 40% | 0.4677 | 0.4778 | 0.4764 | +1.0% | −0.1% |
+
+- The hoped-for "gaps widen as noise rises" did **not** appear. All gaps (~1–2%) are inside the
+  seed-to-seed scatter (±1–1.6% for softmax/AS). No clean separation.
+- Checked the **final-epoch** model too (where memorization shows, not just best-on-clean-val):
+  the seed-42 trace where AS resists noise is cancelled by seed-43 where plain CE wins. Still a wash.
+- **Only repeatable signal:** GAM has the lowest seed-to-seed variance at every noisy level
+  (±0.3% vs ±1–1.6%) — echoes the earlier "GAM overfits slower / more stable" finding. A
+  *robustness* signal, not an accuracy one.
+- **Why SST-5 probably can't show this:** 5 classes + early-stopping on a *clean* val set already
+  protects every method from memorizing noise — muting the exact effect masking is meant to provide.
+
+**This is the third setup where AS-Softmax doesn't convincingly beat plain CE** (clean SST-5,
+clean 20NG, noisy SST-5). Decision point — pick one (see the chat discussion of 2026-06-13):
+  - **(A) decisive test:** move the sweep to 20NG (20 classes) + higher noise (0.4, 0.6) + 3 seeds.
+    Give the hypothesis its best shot; if it fails *there*, the pivot is fully justified.
+  - **(B) reframe:** stop chasing accuracy, build the paper around GAM's stability/robustness
+    (the one repeatable thread) — calibration + train/val memorization gap as the headline metrics.
+  - **(C) pivot axis:** drop class-pair, build the sample-based (Stage 3) or time-based (Stage 4) margin.
+
+*Everything below is the earlier history that led here — kept for context.*
 
 ---
 
