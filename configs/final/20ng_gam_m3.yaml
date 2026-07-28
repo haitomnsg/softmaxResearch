@@ -1,0 +1,42 @@
+name: final_20ng_gam_m3
+seed: 42
+
+# FINAL EXPERIMENT (E1) — GAM-Softmax, CLASS-PAIR axis only (M3').
+# δ_{t,j} = δ_min + (δ_max(τ) − δ_min)·σ(u_t·v_j/√k), learnable via the STE path.
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: true
+  ste_temp: 0.1
+  margin:
+    type: classpair_lowrank
+    rank: 8
+    init_std: 0.02
+    schedule:
+      type: linear
+      delta_min: 0.05
+      delta_max: 0.4
+      warmup_frac: 0.3
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, m3_classpair, gam_softmax]

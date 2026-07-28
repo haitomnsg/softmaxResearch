@@ -15,7 +15,7 @@ from gam_softmax.losses import (
     SoftmaxLoss,
     SparsemaxLoss,
 )
-from gam_softmax.margins import ClassPairLowRankMargin
+from gam_softmax.margins import ClassPairLowRankMargin, SampleConfidenceMargin
 from gam_softmax.schedules import ConstantSchedule, LinearSchedule
 
 
@@ -544,3 +544,130 @@ def test_gam_softmax_rejects_nonpositive_ste_temp():
     m = ClassPairLowRankMargin(n_classes=5, schedule=sch, rank=4)
     with pytest.raises(ValueError):
         GAMSoftmaxLoss(n_classes=5, margin_fn=m, ste_temp=0.0)
+
+
+# ---------- SampleConfidenceMargin (M4) ----------
+
+def _sample_margin(**kw):
+    sch = LinearSchedule(delta_min=0.0, delta_max=0.15, warmup_frac=0.1)
+    defaults = dict(n_classes=5, schedule=sch, beta=1.0, temp=1.0,
+                    reject_warmup_frac=0.3, delta_floor=-1.0, delta_ceiling=0.15)
+    defaults.update(kw)
+    return SampleConfidenceMargin(**defaults)
+
+
+def _confidence_split_logits():
+    """Batch where sample 0 is very unconfident about its label and sample 1 very
+    confident — the two ends of the suspicion score."""
+    logits = torch.tensor([
+        [0.0, 5.0, 0.0, 0.0, 0.0],   # target 0, model prefers class 1  → suspicious
+        [5.0, 0.0, 0.0, 0.0, 0.0],   # target 0, model agrees           → confident
+        [1.0, 1.0, 0.0, 0.0, 0.0],   # target 0, middling
+        [2.0, 0.5, 0.0, 0.0, 0.0],   # target 0, fairly confident
+    ])
+    targets = torch.zeros(4, dtype=torch.long)
+    return logits, targets
+
+
+def test_sample_confidence_beta_zero_recovers_base_schedule():
+    """beta=0 is the control ablation: the sample axis switches off and every
+    slot must equal the scheduled scalar margin."""
+    m = _sample_margin(beta=0.0)
+    logits, targets = _confidence_split_logits()
+    delta = m(logits, targets, None, step_frac=1.0)
+    assert torch.allclose(delta, torch.full_like(delta, 0.15))
+
+
+def test_sample_confidence_suspicious_sample_gets_lower_margin():
+    """The core directional claim: low p_t ⇒ smaller δ ⇒ more classes masked."""
+    m = _sample_margin()
+    logits, targets = _confidence_split_logits()
+    delta = m(logits, targets, None, step_frac=1.0)
+    assert delta[0, 0] < delta[2, 0] < delta[1, 0]
+
+
+def test_sample_confidence_no_effect_during_warmup():
+    """β(τ)=0 through reject_warmup_frac — p_t carries no signal while the model
+    is still near-random, so δ must not vary across samples yet."""
+    m = _sample_margin(reject_warmup_frac=0.3)
+    logits, targets = _confidence_split_logits()
+    delta = m(logits, targets, None, step_frac=0.2)
+    assert m.beta_at(0.2) == 0.0
+    assert torch.allclose(delta, delta[0, 0].expand_as(delta))
+    # ...and it does vary once the ramp is over
+    assert m(logits, targets, None, step_frac=1.0).std() > 0
+
+
+def test_sample_confidence_respects_floor_and_ceiling():
+    m = _sample_margin(beta=5.0, delta_floor=-0.4, delta_ceiling=0.1)
+    logits, targets = _confidence_split_logits()
+    delta = m(logits, targets, None, step_frac=1.0)
+    assert float(delta.min()) >= -0.4 - 1e-6
+    assert float(delta.max()) <= 0.1 + 1e-6
+
+
+def test_sample_confidence_rejects_suspicious_sample_entirely():
+    """The anti-memorization mechanism. With a negative floor, the most
+    suspicious sample's margin drops below every gap p_t − p_j, so all its
+    non-target slots are masked and its loss contribution collapses to ~0."""
+    logits, targets = _confidence_split_logits()
+    m = _sample_margin(beta=2.0, delta_floor=-1.0)
+    gam_keep = GAMSoftmaxLoss(n_classes=5, margin_fn=m)(
+        logits, targets, step_frac=1.0
+    )["mask"]
+    as_keep = ASSoftmaxLoss(n_classes=5, delta=0.15)(
+        logits, targets, step_frac=1.0
+    )["mask"]
+
+    # Scalar AS-Softmax keeps every competitor alive for the mislabeled-looking
+    # sample (its p_t is below everything, so no gap clears δ) and therefore
+    # keeps training on the wrong label. The sample axis masks them all, leaving
+    # only the target slot — the sample drops out of the loss.
+    assert int(as_keep[0].sum()) == 5
+    assert int(gam_keep[0].sum()) == 1
+    assert bool(gam_keep[0, targets[0]])
+    # the confident sample is unaffected: it was already fully masked by both
+    assert torch.equal(gam_keep[1], as_keep[1])
+
+
+def test_sample_confidence_margin_is_detached_from_logits():
+    """Suspicion is read from the model, never a gradient path back into it —
+    same stop-gradient discipline as the AS-Softmax mask."""
+    m = _sample_margin()
+    logits, targets = _confidence_split_logits()
+    logits = logits.clone().requires_grad_(True)
+    delta = m(logits, targets, None, step_frac=1.0)
+    assert not delta.requires_grad
+
+
+def test_sample_confidence_composes_over_classpair_margin():
+    """M6: the sample axis modulating the M3 class-pair matrix. The result must
+    vary along BOTH axes — across rows (samples) and within a row (classes)."""
+    torch.manual_seed(0)
+    base_sch = LinearSchedule(delta_min=0.05, delta_max=0.4, warmup_frac=0.3)
+    base = ClassPairLowRankMargin(n_classes=5, schedule=base_sch, rank=4, init_std=1.0)
+    m = _sample_margin(beta=0.3, delta_floor=-1.0, delta_ceiling=1.0, base_margin=base)
+    logits, targets = _confidence_split_logits()
+    delta = m(logits, targets, None, step_frac=1.0)
+
+    assert delta.shape == logits.shape
+    assert delta.std(dim=1).max() > 0          # varies across classes (class-pair axis)
+    assert delta[:, 0].std() > 0               # varies across samples (sample axis)
+    # base_margin is a submodule, so its u/v reach the optimizer
+    assert any(p is base.u for p in m.parameters())
+
+
+def test_sample_confidence_rejects_bad_hparams():
+    sch = LinearSchedule(delta_min=0.0, delta_max=0.15, warmup_frac=0.1)
+    with pytest.raises(ValueError):
+        SampleConfidenceMargin(n_classes=5, schedule=sch, beta=-0.1)
+    with pytest.raises(ValueError):
+        SampleConfidenceMargin(n_classes=5, schedule=sch, temp=0.0)
+    with pytest.raises(ValueError):
+        SampleConfidenceMargin(n_classes=5, schedule=sch, reject_warmup_frac=1.5)
+    with pytest.raises(ValueError):
+        SampleConfidenceMargin(n_classes=5, schedule=sch, delta_floor=-2.0)
+    with pytest.raises(ValueError):
+        SampleConfidenceMargin(n_classes=5, schedule=sch, delta_floor=0.5, delta_ceiling=0.1)
+    with pytest.raises(TypeError):
+        SampleConfidenceMargin(n_classes=5, schedule=sch, base_margin="not a margin")

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import json
 import sys
+import time
 from pathlib import Path
 
 import torch
@@ -27,7 +29,8 @@ from gam_softmax.losses import (
     SoftmaxLoss,
     SparsemaxLoss,
 )
-from gam_softmax.margins import ClassPairLowRankMargin
+from gam_softmax.data.probe import build_probe
+from gam_softmax.margins import ClassPairLowRankMargin, SampleConfidenceMargin
 from gam_softmax.models import TextClassifier
 from gam_softmax.schedules import ConstantSchedule, LinearSchedule
 from gam_softmax.training import Trainer
@@ -53,6 +56,7 @@ SCHEDULE_REGISTRY = {
 
 MARGIN_REGISTRY = {
     "classpair_lowrank": ClassPairLowRankMargin,
+    "sample_confidence": SampleConfidenceMargin,
 }
 
 
@@ -66,6 +70,10 @@ def build_margin(cfg: dict, n_classes: int):
     cfg = dict(cfg)
     cls = MARGIN_REGISTRY[cfg.pop("type")]
     schedule = build_schedule(cfg.pop("schedule"))
+    # a nested `base:` block composes margins (e.g. sample axis over class-pair axis)
+    base_cfg = cfg.pop("base", None)
+    if base_cfg is not None:
+        cfg["base_margin"] = build_margin(base_cfg, n_classes)
     return cls(n_classes=n_classes, schedule=schedule, **cfg)
 
 
@@ -82,6 +90,7 @@ def build_data(cfg: dict, tokenizer):
             limit_train=cfg["dataset"].get("limit_train"),
             label_noise=cfg["dataset"].get("label_noise", 0.0),
             noise_seed=cfg["dataset"].get("noise_seed", 0),
+            eval_batch_size=cfg["dataset"].get("eval_batch_size"),
         )
     if name == "20newsgroups":
         from gam_softmax.data.text import load_20newsgroups
@@ -94,6 +103,7 @@ def build_data(cfg: dict, tokenizer):
             limit_train=cfg["dataset"].get("limit_train"),
             label_noise=cfg["dataset"].get("label_noise", 0.0),
             noise_seed=cfg["dataset"].get("noise_seed", 0),
+            eval_batch_size=cfg["dataset"].get("eval_batch_size"),
         )
     raise ValueError(f"Unknown dataset: {name}")
 
@@ -120,7 +130,12 @@ def main() -> None:
     ap.add_argument("--label-noise", type=float, default=None,
                     help="Override dataset.label_noise (fraction of train labels to corrupt; used by the noise sweep)")
     ap.add_argument("--device", default=None)
+    ap.add_argument("--out-json", default=None,
+                    help="Write the full result record (history, calibration, memorization) here")
+    ap.add_argument("--probe-size", type=int, default=1200,
+                    help="Training examples held in the memorization probe; 0 disables it")
     args = ap.parse_args()
+    t_start = time.time()
 
     cfg = load_config(args.config)
     if args.label_noise is not None:
@@ -169,6 +184,11 @@ def main() -> None:
             weight_decay=wd,
         )
 
+    # Held-in slice of the training set: separates "learned the task" from
+    # "memorized the corrupted labels". Same probe seed for every method so the
+    # memorization numbers are comparable.
+    probe = build_probe(data, size=args.probe_size, seed=1234) if args.probe_size > 0 else None
+
     trainer = Trainer(
         model=model,
         loss_fn=loss_fn,
@@ -180,9 +200,38 @@ def main() -> None:
         max_steps=args.max_steps if args.max_steps is not None else optim_cfg.get("max_steps"),
         log_every=optim_cfg.get("log_every", 25),
         grad_clip=optim_cfg.get("grad_clip", 1.0),
+        probe=probe,
     )
     state = trainer.fit()
     print(f"[run] done. seed={seed} best_val_acc={state.best_val_acc:.4f}")
+
+    if args.out_json:
+        best = max(state.history, key=lambda h: h.get("val_accuracy", -1.0)) if state.history else {}
+        record = {
+            "config": args.config,
+            "name": cfg.get("name", Path(args.config).stem),
+            "dataset": cfg.get("dataset", {}).get("name"),
+            "loss_type": cfg["loss"]["type"],
+            "seed": seed,
+            "label_noise": noise,
+            "epochs": optim_cfg["epochs"],
+            "best_val_acc": state.best_val_acc,
+            "best_epoch": state.best_epoch,
+            "final_val_acc": state.final_val_acc,
+            # calibration/memorization are read at the *best* epoch so they
+            # describe the model you would actually keep
+            "best_val_ece": best.get("val_ece"),
+            "best_mem_rate": best.get("mem_rate"),
+            "best_recover_rate": best.get("recover_rate"),
+            "final_val_ece": state.history[-1].get("val_ece") if state.history else None,
+            "final_mem_rate": state.history[-1].get("mem_rate") if state.history else None,
+            "wall_time_s": round(time.time() - t_start, 1),
+            "history": state.history,
+        }
+        out_path = Path(args.out_json)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        print(f"[run] wrote {out_path}")
 
 
 if __name__ == "__main__":

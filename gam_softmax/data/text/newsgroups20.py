@@ -77,6 +77,7 @@ def load_20newsgroups(
     limit_train: Optional[int] = None,
     label_noise: float = 0.0,
     noise_seed: int = 0,
+    eval_batch_size: Optional[int] = None,
 ) -> dict:
     """Load 20 Newsgroups (sklearn) and return train/val DataLoaders.
 
@@ -93,6 +94,7 @@ def load_20newsgroups(
     if limit_train is not None:
         tr_texts = tr_texts[:limit_train]
         tr_labels = tr_labels[:limit_train]
+    clean_labels = list(tr_labels)
     if label_noise and label_noise > 0.0:
         from gam_softmax.data.label_noise import inject_label_noise
 
@@ -100,9 +102,10 @@ def load_20newsgroups(
             tr_labels, NEWSGROUPS20_NUM_CLASSES, label_noise, seed=noise_seed
         )
 
+    train_ds = _ListTextDataset(tr_texts, tr_labels, tokenizer, max_seq_len)
     return {
         "train": DataLoader(
-            _ListTextDataset(tr_texts, tr_labels, tokenizer, max_seq_len),
+            train_ds,
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
@@ -110,10 +113,15 @@ def load_20newsgroups(
         ),
         "val": DataLoader(
             _ListTextDataset(va_texts, va_labels, tokenizer, max_seq_len),
-            batch_size=batch_size,
+            batch_size=eval_batch_size or batch_size,
             shuffle=False,
             num_workers=num_workers,
             collate_fn=_collate,
         ),
         "n_classes": NEWSGROUPS20_NUM_CLASSES,
+        # extras the memorization probe needs (see gam_softmax/data/probe.py)
+        "train_dataset": train_ds,
+        "train_clean_labels": clean_labels,
+        "train_noisy_labels": list(tr_labels),
+        "collate": _collate,
     }

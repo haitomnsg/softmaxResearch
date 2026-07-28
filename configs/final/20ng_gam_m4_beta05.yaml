@@ -1,0 +1,47 @@
+name: final_20ng_gam_m4_beta05
+seed: 42
+
+# FINAL EXPERIMENT (E1) — half-strength ablation of the sample axis.
+# Identical to 20ng_gam_m4.yaml except beta 1.0 → 0.5. beta controls how far a
+# suspicious sample's margin can fall below the base; this row shows whether the
+# effect (if any) scales with the knob, which is the difference between a real
+# mechanism and a lucky seed.
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: false
+  margin:
+    type: sample_confidence
+    beta: 0.5
+    temp: 1.0
+    reject_warmup_frac: 0.3
+    delta_floor: -1.0
+    delta_ceiling: 0.15
+    schedule:
+      type: linear
+      delta_min: 0.0
+      delta_max: 0.15
+      warmup_frac: 0.1
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, m4_sample, ablation, gam_softmax]

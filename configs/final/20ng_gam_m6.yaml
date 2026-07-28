@@ -1,0 +1,56 @@
+name: final_20ng_gam_m6
+seed: 42
+
+# FINAL EXPERIMENT (E1) — GAM-Softmax, COMBINED class-pair × sample (M6).
+# The sample-axis margin modulates the M3 class-pair matrix instead of a scalar
+# base, via the nested `base:` block. This is the only config where δ varies
+# along all three axes at once (class-pair, sample, time).
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: true         # class-pair u/v still train through the STE path
+  ste_temp: 0.1
+  margin:
+    type: sample_confidence
+    beta: 1.0
+    temp: 1.0
+    reject_warmup_frac: 0.3
+    delta_floor: -1.0
+    delta_ceiling: 0.4           # == the class-pair margin's δ_max, so the axis stays one-sided
+    schedule:                    # unused when `base` is present, but required by the API
+      type: linear
+      delta_min: 0.0
+      delta_max: 0.15
+      warmup_frac: 0.1
+    base:                        # ← the M3 class-pair margin, identical to 20ng_gam_m3.yaml
+      type: classpair_lowrank
+      rank: 8
+      init_std: 0.02
+      schedule:
+        type: linear
+        delta_min: 0.05
+        delta_max: 0.4
+        warmup_frac: 0.3
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, m6_combined, gam_softmax]

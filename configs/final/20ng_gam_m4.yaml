@@ -1,0 +1,57 @@
+name: final_20ng_gam_m4
+seed: 42
+
+# FINAL EXPERIMENT (E1) — GAM-Softmax, SAMPLE axis only (M4).
+#
+# Deliberately a MINIMAL delta from the AS-Softmax baseline: the schedule below
+# (0 → 0.15 over the first 10% of training) reproduces `as_softmax` δ exactly, so
+# the only difference between this config and 20ng_as_softmax.yaml is the
+# per-sample deviation ±β. Any gap between the two rows is attributable to the
+# sample axis alone.
+#
+# beta=1.0 with delta_floor=-1.0 means a maximally-suspicious sample can reach
+# δ ≈ -0.85, which masks even classes that are *ahead* of its training label —
+# i.e. the sample drops out of the loss. That is the anti-memorization mechanism.
+# delta_ceiling=0.15 makes the axis one-sided: confident samples stay exactly at
+# the AS-Softmax margin, so the M4-vs-AS row difference is purely "what we do to
+# suspicious samples". beta is the one hyperparameter that would want a sweep;
+# 20ng_gam_m4_beta05.yaml is the half-strength ablation.
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: false        # this margin has no learnable parameters
+  margin:
+    type: sample_confidence
+    beta: 1.0                    # max per-sample deviation from the base margin
+    temp: 1.0                    # suspicion softness, in batch-std units
+    reject_warmup_frac: 0.3      # β = 0 for the first 30% — p_t is meaningless early
+    delta_floor: -1.0            # allow full sample rejection
+    delta_ceiling: 0.15          # one-sided: never tighter than AS-Softmax
+    schedule:
+      type: linear
+      delta_min: 0.0
+      delta_max: 0.15            # == as_softmax delta
+      warmup_frac: 0.1           # == as_softmax warmup_frac
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, m4_sample, gam_softmax]

@@ -59,6 +59,7 @@ def load_sst5(
     limit_train: Optional[int] = None,
     label_noise: float = 0.0,
     noise_seed: int = 0,
+    eval_batch_size: Optional[int] = None,
 ) -> dict:
     """Load SST-5 from HuggingFace and return train/val/test DataLoaders.
 
@@ -74,17 +75,19 @@ def load_sst5(
     test = ds["test"]
     if limit_train is not None:
         train = train.select(range(min(limit_train, len(train))))
+    clean_labels = [int(y) for y in train["label"]]
     if label_noise and label_noise > 0.0:
         from gam_softmax.data.label_noise import inject_label_noise
 
         noisy = inject_label_noise(
-            list(train["label"]), SST5_NUM_CLASSES, label_noise, seed=noise_seed
+            clean_labels, SST5_NUM_CLASSES, label_noise, seed=noise_seed
         )
         train = train.map(lambda ex, i: {"label": noisy[i]}, with_indices=True)
 
+    train_ds = _SST5Dataset(train, tokenizer, max_seq_len)
     return {
         "train": DataLoader(
-            _SST5Dataset(train, tokenizer, max_seq_len),
+            train_ds,
             batch_size=batch_size,
             shuffle=True,
             num_workers=num_workers,
@@ -92,7 +95,7 @@ def load_sst5(
         ),
         "val": DataLoader(
             _SST5Dataset(val, tokenizer, max_seq_len),
-            batch_size=batch_size,
+            batch_size=eval_batch_size or batch_size,
             shuffle=False,
             num_workers=num_workers,
             collate_fn=_collate,
@@ -105,4 +108,9 @@ def load_sst5(
             collate_fn=_collate,
         ),
         "n_classes": SST5_NUM_CLASSES,
+        # extras the memorization probe needs (see gam_softmax/data/probe.py)
+        "train_dataset": train_ds,
+        "train_clean_labels": clean_labels,
+        "train_noisy_labels": [int(y) for y in train["label"]],
+        "collate": _collate,
     }

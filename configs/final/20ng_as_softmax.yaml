@@ -1,0 +1,33 @@
+name: final_20ng_as_softmax
+seed: 42
+
+# FINAL EXPERIMENT (E1) — the method we extend (Lv et al. 2023). Scalar margin.
+# δ = 0.15 ramped over the first 10% of training, matching the earlier baselines.
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: as_softmax
+  delta: 0.15
+  warmup_frac: 0.1
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, as_softmax]
