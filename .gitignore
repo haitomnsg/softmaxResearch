@@ -32,3 +32,9 @@ outputs/
 Thumbs.db
 .idea/
 .vscode/
+
+# presentation build artefacts (the .pptx itself IS committed)
+presentation/node_modules/
+presentation/package*.json
+presentation/render/
+presentation/*.pdf

@@ -1,5 +1,11 @@
 # GAM-Softmax — Progress & Results
 
+> **⚠️ SUPERSEDED (2026-07-31).** This was written mid-project, before the final
+> results. Its central claim — that a structured margin beats a fixed one — was
+> **not** supported. Read [FINAL_REPORT.md](FINAL_REPORT.md) for what actually
+> happened, or open `presentation/GAM-Softmax-Presentation.pptx` for the talk version.
+
+
 *A 10-minute walkthrough. Last updated: 2026-05-29*
 
 ---

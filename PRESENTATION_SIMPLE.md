@@ -1,5 +1,11 @@
 # The Project, Explained Simply
 
+> **⚠️ SUPERSEDED (2026-07-31).** This was written mid-project, before the final
+> results. Its central claim — that a structured margin beats a fixed one — was
+> **not** supported. Read [FINAL_REPORT.md](FINAL_REPORT.md) for what actually
+> happened, or open `presentation/GAM-Softmax-Presentation.pptx` for the talk version.
+
+
 *Read this before the presentation. No math, plain words. It explains everything in `PRESENTATION.md`.*
 
 ---
