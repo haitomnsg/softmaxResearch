@@ -155,22 +155,30 @@ def write_summary() -> str:
             continue
         lines += [
             f"## Label noise: {noise:.0%}", "",
-            "| method | best val acc % | final val acc % | best−final | val ECE | mem rate % | recover % | seeds |",
-            "|---|---|---|---|---|---|---|---|",
+            "| method | best val acc % | final val acc % | decay | ECE @best | mem @best % | mem @final % | recover @best % | seeds |",
+            "|---|---|---|---|---|---|---|---|---|",
         ]
         for method, recs in rows:
             best_mu, best_sd, n = _agg(recs, "best_val_acc")
             fin_mu, fin_sd, _ = _agg(recs, "final_val_acc")
             ece_mu, ece_sd, _ = _agg(recs, "best_val_ece")
-            mem_mu, mem_sd, n_mem = _agg(recs, "final_mem_rate")
+            memb_mu, memb_sd, n_memb = _agg(recs, "best_mem_rate")
+            memf_mu, memf_sd, n_memf = _agg(recs, "final_mem_rate")
             rec_mu, rec_sd, n_rec = _agg(recs, "best_recover_rate")
             drop = (best_mu - fin_mu) * 100 if n else float("nan")
             lines.append(
                 f"| {method} | {_fmt(best_mu, best_sd, n)} | {_fmt(fin_mu, fin_sd, n)} | "
-                f"{drop:+.2f} | {_fmt(ece_mu, ece_sd, n, pct=False)} | "
-                f"{_fmt(mem_mu, mem_sd, n_mem)} | {_fmt(rec_mu, rec_sd, n_rec)} | {n} |"
+                f"−{drop:.2f} | {_fmt(ece_mu, ece_sd, n, pct=False)} | "
+                f"{_fmt(memb_mu, memb_sd, n_memb)} | {_fmt(memf_mu, memf_sd, n_memf)} | "
+                f"{_fmt(rec_mu, rec_sd, n_rec)} | {n} |"
             )
-        lines.append("")
+        lines += [
+            "",
+            "**decay** = accuracy lost between the peak epoch and the last one (overfitting). "
+            "**mem** = of the training examples whose labels were corrupted, the fraction the "
+            "model predicts AS their corrupted label — direct memorization, at the best epoch "
+            "and at the end. **recover** = same examples, fraction predicted as their TRUE label.",
+        ]
 
         # the two comparisons the project actually turns on
         def mu(method: str, key: str) -> float:

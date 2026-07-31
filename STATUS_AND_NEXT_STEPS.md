@@ -1,34 +1,45 @@
 # Where We Are & What To Do Next (plain-English version)
 
-*Last updated: 2026-05-28. This is the simple companion to `README.md` and `docs/`.
-Those files are the full research/math plan. This file is the developer's map: what's
-built, what's broken, and the exact next steps in order. No math required to read it.*
+*Last updated: 2026-07-31. This is the simple companion to `README.md` and `docs/`.
+No math required to read it.*
 
 ---
 
-## TL;DR — read this first
+# ✅ PROJECT CONCLUDED — 2026-07-31
 
-- The **engine is built and tested**: all 9 loss functions, the training loop, the
-  SST-5 text dataset, the experiment runner, and a ~500-line test suite. Tests pass.
-- The **plain baselines run fine** on the GPU (~51–52% accuracy on SST-5 — normal for
-  this dataset).
-- **Our actual method (GAM-Softmax) crashes on the GPU and has produced zero results.**
-  The first real experiment that's supposed to tell us "is this whole idea worth it?"
-  (called *H1*) ran, but our method died every time, so **we have no answer yet.**
-- **That crash is the wall.** Everything else in the project waits behind it. Fixing it
-  is step 1 below.
+**The full write-up is [FINAL_REPORT.md](FINAL_REPORT.md). Read that. Everything
+below this banner is the history that led there, kept so the "why" is recoverable.**
+
+## The whole thing in six lines
+
+- We tried to show that AS-Softmax's **one fixed gap δ** should be a **smart gap**
+  that varies by class-pair, by example, and over time.
+- **It didn't work on accuracy.** Across four testbeds, no version beat plain
+  cross-entropy by more than the run-to-run randomness.
+- **The reason is upstream of us:** AS-Softmax — the published method we were
+  extending — doesn't reliably beat plain cross-entropy in our setup either. You
+  can't improve on an advantage that isn't there.
+- **One thing did work.** Letting the gap go **negative** for examples the model
+  distrusts kicks those examples out of training entirely. Under 40% wrong labels
+  that cut memorization of the bad labels by about **4×** and left the finished
+  model **+3.7 points** better than cross-entropy.
+- **But** it doesn't improve the *best* score during training, only the *final*
+  one. If you can early-stop on clean data you get nothing; if you can't — which
+  is the real situation when labels are noisy — you get the +3.7.
+- **We stopped** because everything left in the plan assumed the core idea worked.
 
 ```
-   YOU ARE HERE
-        |
-        v
-[engine built] -> [baselines run] -> [crash fixed] -> [H1 tie on clean text] -> [NOISY-LABEL SWEEP] -> rest
-   (done)            (done)            (done)           (done, reassessed)        (built, run it next)
+[engine built] -> [baselines] -> [H1 flat on clean text] -> [noisy SST-5 flat]
+     (done)         (done)             (done)                   (done)
+                                                                   |
+                                                                   v
+                              [E1: noisy 20NG + sample axis] -> [CONCLUDED]
+                                    (done, one real finding)
 ```
 
 ---
 
-## ⏩ ACTIVE DIRECTION (updated 2026-06-12) — read this, it supersedes the older steps below
+## ⏸ Earlier active direction (2026-06-12) — superseded by the banner above
 
 **The real problem isn't the code — it's the testbed.** On clean, balanced text
 (SST-5, 20NG) the method we extend, AS-Softmax, barely matches plain cross-entropy,

@@ -97,15 +97,16 @@ Update this section as you make progress.
 
 | Phase | Status | Notes |
 |---|---|---|
+| **PROJECT** | **concluded 2026-07-31** | Core hypothesis not supported. **Read [FINAL_REPORT.md](FINAL_REPORT.md) first** — it supersedes the plan in this file |
 | Phase 0: Repo setup | **done** | MS0–MS3 complete; gam_softmax package + 8 baselines coded & unit-tested |
 | Phase 1: Reproduce baselines | **done** | SST-5 (3 seeds): softmax 51.1%, AS-Softmax 52.2% (AS ≥ softmax ✓). See `runs/baselines/summary.md` |
 | Phase 2: Class-dependent margins | H1 tested, no benefit on clean text | Both fixed (52.10%) and learnable (51.83%) class-pair margins tie/underperform AS-Softmax (52.17%) on SST-5; 20NG gave a faint +0.6%. Root issue: AS-Softmax itself doesn't reliably beat plain CE on clean balanced text. **Direction chosen (2026-06-12): move to a hard regime (noisy labels) where masking is motivated.** |
-| Phase 2b: Hard-regime testbed (noisy labels) | infra ready, sweep not yet run | Seeded symmetric label-noise knob added to both loaders + `experiments/noise_sweep.py` driver. Smoke-tested on GPU. Next action: run the sweep (softmax/AS/GAM × noise {0,0.2,0.4}). See STATUS_AND_NEXT_STEPS.md |
-| Phase 3: Sample-dependent margins | not started | |
-| Phase 4: Time-adaptive margins | not started | |
-| Phase 5: Combined + cross-modality | not started | |
-| Phase 6: Regression extension (stretch) | not started | |
-| Phase 7: Theory + writing | not started | |
+| Phase 2b: Hard-regime testbed (noisy labels) | **done** | SST-5 sweep inconclusive (all gaps inside seed scatter). Decisive 20NG + 40% noise experiment run as E1 — see below |
+| Phase 3: Sample-dependent margins | **done** | M4 `SampleConfidenceMargin` built + tested. δ may go **negative**, ejecting suspect samples from the loss — makes the small-loss trick a special case of a margin. **The project's one positive result:** ~4× less memorization of corrupted labels, +3.7 pts final-epoch accuracy over CE; **no peak-accuracy gain** |
+| Phase 4: Time-adaptive margins | **partial** | The `Schedule` (linear warmup of the margin cap) is used by every GAM variant, so the time axis is exercised throughout — but never ablated on its own |
+| Phase 5: Combined + cross-modality | **code only** | M6 (class-pair × sample × time) implemented and unit-tested via the nested `base:` config block; run cut for compute. Cross-modality never attempted (single 6 GB GPU) |
+| Phase 6: Regression extension (stretch) | not started | Dropped — depended on the core hypothesis holding |
+| Phase 7: Theory + writing | **concluded** | [FINAL_REPORT.md](FINAL_REPORT.md) is the write-up. No conference submission: the headline hypothesis did not survive, and the result that did is a conditional robustness finding, not an accuracy one |
 
 ## 7. Decision log
 
@@ -129,6 +130,10 @@ Record every non-obvious choice you make so the paper's "why" is recoverable.
 | 2026-05-29 | 20NG screen (1 seed): GAM 71.18% > AS-Softmax 70.59% (+0.6%); softmax best at 71.46% | First positive signal for GAM>AS-Softmax. GAM was still rising at epoch 3 (overfits slower) while others peaked early. One seed, within noise; AS-Softmax < plain CE. Next: 3 seeds + more epochs. See `runs/stage2_20ng/summary.md` |
 | 2026-06-12 | After reassessment, **direction = harder testbed (noisy labels)** over reframing/axis-pivot | The blocker isn't a bug, it's that AS-Softmax ≈ plain CE on clean balanced text, so GAM has no floor to build on. Margin/masking losses are *motivated* in hard regimes; symmetric label noise is the cheapest, best-motivated one (masking can't memorize corrupted labels) and reuses existing data. User decision |
 | 2026-06-12 | Built seeded symmetric label-noise infra: `gam_softmax/data/label_noise.py` + `label_noise`/`noise_seed` knobs in both loaders + `--label-noise` override + `experiments/noise_sweep.py` | Noise seed is decoupled from run seed so all methods see identical corrupted labels (fair comparison). 11 new unit tests; smoke-tested on GPU at 40% noise. Sweep not yet run (it's the next GPU job) |
+| 2026-07-31 | **PROJECT CONCLUDED.** Full write-up in [FINAL_REPORT.md](FINAL_REPORT.md) | H0 (AS-Softmax > CE) and H1 (class-pair) not supported across four testbeds; H2 (sample axis) split — mechanism confirmed, no peak-accuracy gain. Stopping is the right call: every remaining item in the plan was premised on H0 holding, and the compute for cross-modality was never reachable on a 6 GB laptop GPU |
+| 2026-07-31 | **E1 result: M4 sample-axis margin cuts memorization ~4× (2.7 pts above the no-memorization floor vs CE's 11.2) and holds +3.7 pts of final-epoch accuracy over CE — but peak accuracy is flat (68.06 vs 68.09).** | The benefit is conditional on the protocol: early-stopping on a *clean* val set discards it, but a clean val set is exactly what you lack under label noise. This is why six weeks of accuracy-only measurement looked flat — we were reading the wrong number. See `runs/final_20ng/summary.md` |
+| 2026-07-31 | **E1 also found AS-Softmax memorizes corrupted labels MORE than plain CE** (14.2 vs 11.2 pts above the floor) | Directly contradicts the rationale for the 2026-06-12 noisy-label pivot ("masking stops the push, so it can't memorize"). Likely mechanism: masking retires easy negatives first, concentrating the remaining gradient budget onto hard examples — which are exactly the mislabeled ones. A negative result worth reporting on its own |
+| 2026-07-28 | Built the sample axis (M4 `SampleConfidenceMargin`) with **δ allowed to go negative**, plus ECE + a memorization probe in the trainer | `p_t − p_j ∈ [−1,1]`, so nothing requires δ > 0. A negative δ masks classes that are *ahead* of the training label, collapsing a suspect sample's loss to ~0 — i.e. small-loss sample rejection expressed as a margin. Instrumentation added because accuracy alone had been flat and uninformative on every prior experiment |
 | 2026-06-13 | **Noisy-label sweep (SST-5, noise {0,0.2,0.4}, 2 seeds): INCONCLUSIVE — no hard-regime win.** Best-val AS−CE = {+1.0%, −0.5%, +1.0%}, GAM−AS = {−0.1%, +2.2%, −0.1%}; all within the ~±2% seed scatter. Final-epoch (memorization) checked too — the seed-42 trace where AS resists noise is cancelled by seed-43 where CE wins. | Third setup where AS-Softmax fails to convincingly beat plain CE (clean SST-5, clean 20NG, now noisy SST-5). The only repeatable thread is **GAM's lower seed-to-seed variance** (±0.3% vs ±1–1.6% at noise>0) — a stability/robustness signal, not an accuracy one. SST-5 (5 classes + clean-val early stopping) likely too easy to bite. See `runs/noise_sweep_sst5/summary.md`. Decision pending: decisive 20NG+high-noise test vs reframe around robustness |
 
 ## 8. How to use these docs
