@@ -79,8 +79,8 @@ turned out to be the crux:
 
 ## 3. What was built
 
-All of it works and is tested — the null result is not a code failure. 78 unit
-tests pass in ~20 s.
+All of it works and is tested — the null result is not a code failure. **70 unit
+tests pass in ~3 s** (`python -m pytest tests/ -q`).
 
 | Component | Where | Notes |
 |---|---|---|
@@ -425,7 +425,7 @@ change the next attempt:
 ```bash
 conda activate gam        # no `python` on PATH otherwise
 
-python -m pytest tests/ -v                                    # 78 tests, ~20 s
+python -m pytest tests/ -v                                    # 70 tests, ~3 s
 python experiments/final_experiment.py                        # E1, resumable (~6 h)
 python experiments/final_experiment.py --only-block 1          # just the decisive block
 python experiments/run.py --config configs/final/20ng_gam_m4.yaml --label-noise 0.4
