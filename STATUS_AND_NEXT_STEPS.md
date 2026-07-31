@@ -22,10 +22,10 @@ below this banner is the history that led there, kept so the "why" is recoverabl
 - **One thing did work.** Letting the gap go **negative** for examples the model
   distrusts kicks those examples out of training entirely. Under 40% wrong labels
   that cut memorization of the bad labels by about **4×** and left the finished
-  model **+3.7 points** better than cross-entropy.
+  model **+2.8 points** better than cross-entropy (both seeds agree).
 - **But** it doesn't improve the *best* score during training, only the *final*
   one. If you can early-stop on clean data you get nothing; if you can't — which
-  is the real situation when labels are noisy — you get the +3.7.
+  is the real situation when labels are noisy — you get the +2.8.
 - **We stopped** because everything left in the plan assumed the core idea worked.
 
 ```

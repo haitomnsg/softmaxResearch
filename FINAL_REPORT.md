@@ -1,7 +1,7 @@
 # GAM-Softmax — Final Report
 
 **Project:** Generalized Adaptive Margin Softmax
-**Period:** 2026-05-23 → 2026-07-28
+**Period:** 2026-05-23 → 2026-07-31
 **Compute:** one RTX 3050 Laptop, 6 GB VRAM
 **Status:** concluded
 
@@ -19,15 +19,32 @@ primitive, and that a **margin function** δ_{t,j}(x, τ) — varying by class p
 by sample, and over time — does better. We built the full apparatus: nine loss
 functions, three margin variants, a composable margin/schedule architecture, a
 noisy-label testbed, and calibration/memorization instrumentation, all
-unit-tested. We then ran the hypothesis on four testbeds. **It did not hold.**
-Across clean SST-5, clean 20 Newsgroups, noisy SST-5, and finally noisy 20
-Newsgroups, no margin variant beat plain cross-entropy by a margin that survives
-seed variance. The reason is upstream of our contribution and is the most useful
-thing this project found: **AS-Softmax itself — the published method we extend —
-does not reliably beat plain cross-entropy in our setup.** A generalization of a
-scalar cannot help when the scalar version has no advantage to generalize. What
-we can defend is the negative result, the mechanism analysis explaining it, and
-a clean codebase that makes the claim checkable.
+unit-tested. We ran it on four testbeds.
+
+**On accuracy, the hypothesis did not hold.** No variant beat plain
+cross-entropy by more than seed noise on any testbed. The reason is upstream of
+our contribution and is the most useful thing this project found: **AS-Softmax
+itself — the published method we extend — does not reliably beat plain
+cross-entropy in our setup.** A generalization of a scalar cannot help when the
+scalar version has no advantage to generalize.
+
+**One thing did work, on a different metric.** Extending δ along the *sample*
+axis and allowing it to go **negative** ejects examples the model distrusts from
+the loss entirely — which makes the noisy-label literature's "small-loss trick" a
+special case of a margin. Under 40% label noise this cut memorization of
+corrupted labels roughly **fourfold** (3.1 vs 11.5 pts above the
+no-memorization floor) and left the finished model **+2.8 pts** better than
+cross-entropy, replicated on both seeds. It did *not* improve peak accuracy. The
+benefit is therefore conditional: early-stopping on a clean validation set
+discards it entirely — and a clean validation set is precisely what you do not
+have when your labels are noisy.
+
+We also found, against the standard story and against our own stated rationale
+for the noisy-label pivot, that **AS-Softmax memorizes corrupted labels *more*
+than plain cross-entropy.**
+
+What we defend: the negative results, the mechanism analysis explaining them, one
+conditional positive finding, and a codebase that makes all of it checkable.
 
 ---
 
@@ -113,7 +130,7 @@ even though it did not win.
 | 4 | 05-29 | SST-5, tuning screen | is H1 just under-tuned? | higher margin LR *monotonically hurt* (52.5% → 50.6% → 50.1%) → not a tuning artifact |
 | 5 | 05-29 | 20NG, clean, 1 seed | testbed with headroom? | GAM **71.18%** > AS **70.59%** (+0.6%) — but plain CE **71.46%** wins, **AS < CE** |
 | 6 | 06-13 | SST-5, noise {0,.2,.4}, 2 seeds | does a hard regime rescue it? | all gaps within ±2% seed scatter → INCONCLUSIVE |
-| 7 | 07-28 | **20NG, noise 40%, 2 seeds, +M4 +M6** | **the decisive test** | see §5 |
+| 7 | 07-28/31 | **20NG, noise 40%, 2 seeds** | **the decisive test** | H0/H1 null confirmed; M4 cuts memorization ~4× — see §5 |
 
 Two things repeat across rows 1–6 and are worth stating plainly:
 
@@ -162,58 +179,95 @@ measures the mechanism directly:
 
 ### 5.1 Results
 
-<!-- E1_RESULTS_TABLE -->
+20 Newsgroups, 40% symmetric label noise, BERT-base, 4 epochs, **2 seeds (42, 43)**.
+Run 2026-07-28/31, commit `b2ff750`. Raw records: `runs/final_20ng/*.json`.
+
+| method | peak val acc % | final val acc % | decay | memorized noise (pts over floor) | mem @final % | recovers true label % |
+|---|---|---|---|---|---|---|
+| softmax (CE) | 67.59 ±0.71 | 64.19 ±0.92 | −3.40 | +11.5 | 33.7 ±0.4 | 41.2 |
+| as_softmax | 67.56 ±0.34 | 64.72 ±0.20 | −2.84 | **+13.6** | **39.9 ±1.8** | 44.1 |
+| gam_m3 (class-pair) | 67.68 ±0.81 | 65.21 ±1.42 | −2.47 | +11.4 | 35.2 ±1.7 | 45.9 |
+| **gam_m4 (sample)** | **68.09 ±0.05** | **66.96 ±0.42** | **−1.13** | **+3.1** | **19.3 ±0.7** | **57.3** |
+
+*"Memorized noise (pts over floor)": with 40% noise where flips never return the
+original label, a model that learned the true function and memorized nothing
+scores exactly **60.0%** on the labels it was given. Everything above 60 is
+memorized noise. "decay" = accuracy lost from the peak epoch to the last.*
+
+**Head-to-head vs plain cross-entropy, reported per seed** — because a
+two-seed mean can hide the fact that one seed did all the work:
+
+| | peak (s42 / s43) | final (s42 / s43) | memorization (s42 / s43) |
+|---|---|---|---|
+| as_softmax − CE | −0.29 / +0.23 | +1.33 / −0.26 | **+7.8 / +4.6** |
+| gam_m3 − CE | +0.16 / +0.01 | +0.67 / +1.38 | +0.6 / +2.4 |
+| gam_m4 − CE | −0.03 / **+1.04** | **+3.72 / +1.83** | **−14.6 / −14.2** |
+
+![memorization](runs/final_20ng/figures/fig2_memorization_n0.4.png)
 
 ### 5.2 What the numbers say
 
-**First, the noise floor.** Plain cross-entropy run at two seeds spans **1.0 pt**
-of peak accuracy (68.09 / 67.09). Every peak-accuracy difference in the table is
-smaller than that. So on the metric this project spent two months optimizing,
-**nothing separates: all four methods peak within half a point of each other,
-inside a noise band twice that wide.**
+**First, the noise floor — this governs how everything else should be read.**
+Plain cross-entropy at two seeds spans **1.0 pt** of peak accuracy (68.09 /
+67.09) but only **0.6 pt** of final memorization rate (33.4 / 34.0).
+**Memorization is a far quieter measurement than accuracy.** So a 14-point gap on
+memorization is ~20× its seed spread and cannot be a lucky seed, while a
+half-point gap on accuracy is inside the noise and means nothing. Reading the
+right metric is most of this experiment.
 
-The same two seeds span only **0.6 pt** of final memorization rate (33.4 / 34.0).
-That matters: memorization is a *much* quieter measurement than accuracy, so a
-gap of 15 points on it is not something a lucky seed produces.
-
-**Second, AS-Softmax fails its precondition again.** AS − CE = **−0.29 pts**. That
-is the fourth testbed in a row (clean SST-5 was the only one where it won, by
-+1.06). The method we set out to generalize does not, in our hands, have an
-advantage over plain cross-entropy to generalize.
+**Second, AS-Softmax fails its precondition again.** AS − CE = **−0.03 pts** over
+two seeds (−0.29 and +0.23 — a coin flip). That is the fourth testbed in a row;
+clean SST-5 was the only one where it won, by +1.06. The method we set out to
+generalize does not, in our hands, have an advantage over plain cross-entropy to
+generalize.
 
 **Third — and this contradicts the reason we pivoted to label noise at all —
-AS-Softmax memorizes corrupted labels *more* than plain cross-entropy** (41.2% vs
-33.4% at the final epoch; it ends 14.2 pts above the no-memorization floor vs
-CE's 11.2). The argument in every margin-loss paper, and in our own pivot
-rationale, is that masking should *prevent* memorization: "it stops pushing once
-the margin is met, so it cannot fit the wrong label." Measured directly, the
-opposite happens. The plausible mechanism: masking retires the *easy* negatives
-first, which are precisely the ones a correctly-labeled example finishes with
-early — so as training proceeds a larger share of the surviving gradient budget
-is spent on the hard, still-confusable examples, and mislabeled examples are
-exactly those. Scalar masking concentrates effort *onto* the noise.
+AS-Softmax memorizes corrupted labels *more* than plain cross-entropy.** It ends
+**+13.6 pts** above the no-memorization floor against CE's +11.5, and the effect
+holds on **both** seeds (+7.8 and +4.6 pts of extra memorization). The argument
+in every margin-loss paper, and in our own pivot rationale, is that masking
+should *prevent* memorization: "it stops pushing once the margin is met, so it
+cannot fit the wrong label." Measured directly, the opposite happens.
+
+The plausible mechanism: masking retires the *easy* negatives first, and those
+are precisely what a correctly-labeled example finishes with early. So as
+training proceeds an ever-larger share of the surviving gradient budget is spent
+on the hard, still-confusable examples — and mislabeled examples are exactly
+those. **Scalar masking concentrates effort onto the noise.** This also explains
+why the whole noisy-label pivot never produced the expected win.
 
 **Fourth, the sample axis does what it was designed to do.** M4 is the only
 variant that breaks the pattern, and it breaks it on every mechanism metric at
-once:
+once (2-seed means):
 
 | | CE | AS | M3 | **M4** |
 |---|---|---|---|---|
-| memorized noise above the floor (pts) | 11.2 | 14.2 | 10.9 | **2.7** |
-| corrupted examples predicted as their *true* label | 38.6% | 42.8% | 47.4% | **56.4%** |
-| accuracy lost from peak to final epoch | 4.55 | 2.94 | 4.05 | **0.81** |
-| non-target slots masked at the end | 0% | 55% | 49% | **95%** |
+| memorized noise above the floor (pts) | 11.5 | 13.6 | 11.4 | **3.1** |
+| corrupted examples predicted as their *true* label | 41.2% | 44.1% | 45.9% | **57.3%** |
+| accuracy lost from peak to final epoch | 3.40 | 2.84 | 2.47 | **1.13** |
+| non-target slots masked at the end | 0% | 56% | 49% | **95%** |
 
 Four independent measurements moving together in the predicted direction, driven
 by a mechanism we can point at in the code (δ goes negative → the suspect
 sample's competitors are all masked → its loss contribution vanishes). M4 ends
-training **2.7 pts** above the theoretical no-memorization floor where the others
+training **3.1 pts** above the theoretical no-memorization floor where the others
 sit 11–14 pts above it — it has very nearly stopped memorizing altogether.
 
-**Fifth, and this is the honest limit of the result: none of that shows up in
-peak accuracy.** M4 peaks at 68.06 against CE's 68.09. The benefit is entirely in
-*not getting worse*: at the final epoch M4 holds **67.25%** while CE has decayed
-to **63.54%**, a **+3.7 pt** gap.
+**Fifth, the honest limit: this does not translate into a peak-accuracy win.**
+M4's mean peak is 68.09 vs CE's 67.59 — nominally **+0.51**, which would clear
+the pre-registered +0.3 criterion. **We do not claim it.** Per seed the gap is
+**−0.03 and +1.04**: the entire mean comes from seed 43, where cross-entropy
+happened to have a bad run. One seed of two is not a result, and this project has
+been burned by exactly that pattern before.
+
+What *does* replicate is the benefit at the **end** of training: **+3.72 and
++1.83 pts** over CE, both seeds positive, mean **+2.77**. M4 holds 66.96% where
+CE has decayed to 64.19%.
+
+One suggestive extra, offered as an observation rather than a finding: **M4 has
+by far the tightest seed-to-seed spread on peak accuracy (±0.05 vs CE's ±0.71)**,
+which echoes the "GAM is more stable" thread that showed up in every earlier
+experiment. With n=2 a variance claim is not something we can support.
 
 Whether that counts as a win depends on a protocol choice that the earlier
 experiments never made explicit:
@@ -224,10 +278,10 @@ experiments never made explicit:
   flat.
 - **If you do not** — which is the actual situation whenever labels are noisy,
   since a clean held-out set is exactly what you lack — you keep the final model,
-  and M4 is worth +3.7 pts over cross-entropy.
+  and M4 is worth **+2.8 pts** over cross-entropy.
 
 **Sixth, a calibration caveat that reads backwards if you only look at the
-number.** The margin variants have far worse ECE (0.43–0.47 vs CE's 0.21). This
+number.** The margin variants have far worse ECE (0.42–0.47 vs CE's 0.19). This
 is **not** overconfidence — it is the opposite. Mean predicted confidence is
 0.25 for M4 against ~0.67 accuracy: the margin objective stops pushing p_t
 upward by construction, so probabilities stay compressed and the model is
@@ -243,19 +297,33 @@ run. **We do not claim a calibration result in either direction.**
 
 | | Hypothesis | Verdict |
 |---|---|---|
-| **H0** | AS-Softmax beats plain cross-entropy | **NOT SUPPORTED** — 3 of 4 testbeds show no advantage; here −0.29 pts |
-| **H1** | class-pair structure (M3) helps | **NOT SUPPORTED** — +0.45 pts over AS-Softmax, inside a 1.0 pt noise band; flat on three prior testbeds too |
-| **H2** | per-sample structure (M4) helps | **SPLIT** — no peak-accuracy gain (+0.26, inside noise), but a large, mechanistically confirmed reduction in memorization (−15 pts) and +3.7 pts of final-epoch accuracy over CE |
-| **H3** | the axes compose (M6) | **UNTESTED** — implemented and unit-tested, but the run was cut for compute |
+| **H0** | AS-Softmax beats plain cross-entropy | **NOT SUPPORTED** — 3 of 4 testbeds show no advantage; here −0.03 pts over 2 seeds |
+| **H1** | class-pair structure (M3) helps | **NOT SUPPORTED** — +0.12 pts over AS-Softmax, inside a 1.0 pt noise band; flat on three prior testbeds too, and shown not to be a tuning artifact |
+| **H2** | per-sample structure (M4) helps | **SPLIT** — peak accuracy not established (+0.51 mean, but −0.03/+1.04 per seed); memorization cut ~4× and final-epoch accuracy +2.77 pts over CE, both replicated |
+| **H3** | the axes compose (M6) | **UNTESTED** — implemented and unit-tested, run cut for compute |
+
+### Confidence, per finding
+
+Graded explicitly, because the findings are not equally solid:
+
+| finding | confidence | basis |
+|---|---|---|
+| M4 cuts memorization ~4× (−14.4 pts) | **Confirmed** | both seeds, −14.6/−14.2; effect is ~20× the metric's seed spread |
+| AS-Softmax memorizes *more* than CE | **Confirmed** | both seeds, +7.8/+4.6 |
+| M4 gains at the final epoch (+2.77) | **Confirmed (direction)** | both seeds positive, but magnitude varies 2× (+3.72/+1.83) |
+| H0 and H1 null | **Confirmed** | 4 testbeds, 2–3 seeds each, plus a tuning screen that ruled out under-tuning |
+| M4 gains at peak accuracy (+0.51) | **Not established** | driven entirely by one seed |
+| M4 is more seed-stable (±0.05) | **Suggestive only** | n=2; consistent with every prior experiment but not testable at this sample size |
+| Calibration | **No claim** | ECE differences are underconfidence artifacts; temperature scaling not run |
 
 ### The one-sentence conclusion
 
 *Generalizing AS-Softmax's scalar margin along the class-pair axis produced no
 measurable benefit on any of four testbeds; generalizing it along the sample
 axis — by letting the margin go negative, which makes small-loss sample
-rejection a special case of a margin — produced no peak-accuracy gain either,
-but did cut memorization of corrupted labels roughly fourfold and left the
-final-epoch model 3.7 points better than cross-entropy under 40% label noise.*
+rejection a special case of a margin — did not reliably improve peak accuracy
+either, but cut memorization of corrupted labels roughly fourfold and left the
+final-epoch model 2.8 points better than cross-entropy under 40% label noise.*
 
 ### What we would and would not claim in writing
 
@@ -282,8 +350,11 @@ final-epoch model 3.7 points better than cross-entropy under 40% label noise.*
 Stated plainly, because the result is modest enough that these matter:
 
 1. **Two seeds, one dataset, one noise level, one architecture, four epochs.** The
-   memorization effect is large relative to seed scatter, but 20 Newsgroups at
-   40% symmetric noise with BERT-base is a single point in a large space.
+   memorization effect is large relative to seed scatter (~20×), but 20 Newsgroups
+   at 40% symmetric noise with BERT-base is a single point in a large space. Two
+   seeds is enough to kill a hypothesis and not enough to establish a small
+   effect — which is exactly why the peak-accuracy gap is reported as
+   unestablished while the memorization gap is not.
 2. **β was never swept.** The ablation comparing β = 1.0 against β = 0.5 was
    implemented and queued but cut for compute. Without it we cannot show the
    effect scales with the knob, which is the cleanest evidence that a mechanism
