@@ -120,8 +120,271 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 }
 
-// =====================================================================  1
-{
+// New slides for the five-section structure: agenda, motivation, dividers,
+// experimental setup, and the experimental programme. Injected by restructure.py.
+
+// ---------------------------------------------------------------- helpers
+const SECTIONS = [
+  ["01", "Introduction", "the problem and what we set out to do"],
+  ["02", "Background", "softmax, cross-entropy and the paper we build on"],
+  ["03", "Methodology", "how we generalise the margin"],
+  ["04", "Experimentation", "datasets, protocol and what we ran"],
+  ["05", "Results & Demonstration", "what we found, and what we can claim"],
+];
+
+function sectionDivider(activeIdx) {
+  const s = pres.addSlide();
+  s.background = { color: NAVY };
+  const [num, title, sub] = SECTIONS[activeIdx];
+
+  s.addText(num, {
+    x: 0.85, y: 2.35, w: 2.2, h: 1.5, margin: 0,
+    fontFace: HEAD, fontSize: 84, bold: true, color: "6FD8C9",
+  });
+  s.addText(title, {
+    x: 3.0, y: 2.5, w: 9.4, h: 0.85, margin: 0, valign: "middle",
+    fontFace: HEAD, fontSize: 40, bold: true, color: WHITE,
+  });
+  s.addText(sub, {
+    x: 3.05, y: 3.35, w: 9.4, h: 0.4, margin: 0,
+    fontFace: TEXT, fontSize: 15, color: "A9B6CC",
+  });
+
+  // progress rail: the other four sections, dimmed
+  SECTIONS.forEach(([n, t], i) => {
+    const x = 0.85 + i * 2.42;
+    const on = i === activeIdx;
+    s.addShape(pres.ShapeType.roundRect, {
+      x, y: 5.55, w: 2.2, h: 0.06, rectRadius: 0.03,
+      fill: { color: on ? "6FD8C9" : "2E4160" }, line: { color: on ? "6FD8C9" : "2E4160" },
+    });
+    s.addText(`${n}  ${t}`, {
+      x, y: 5.72, w: 2.3, h: 0.3, margin: 0,
+      fontFace: TEXT, fontSize: 9.5, bold: on, color: on ? "6FD8C9" : "5A6B87",
+    });
+  });
+  return s;
+}
+
+// ================================================================= AGENDA
+function agendaSlide() {
+  const s = lightSlide("What I will cover", "Agenda");
+  const blurbs = [
+    "Why a classifier's training objective is asking for the wrong thing",
+    "Softmax, cross-entropy, and AS-Softmax — the method we extend",
+    "GAM-Softmax: making the margin adapt, and letting it go negative",
+    "Four clean testbeds, then one under 40% wrong labels",
+    "What failed, what worked, and what we are willing to claim",
+  ];
+  SECTIONS.forEach(([n, t], i) => {
+    const y = 1.62 + i * 1.02;
+    s.addShape(pres.ShapeType.roundRect, {
+      x: 0.6, y, w: 12.1, h: 0.88, rectRadius: 0.1,
+      fill: { color: i === 4 ? "E9F5F3" : WHITE },
+      line: { color: i === 4 ? "BFE0DA" : CARD_EDGE, width: 1 },
+      shadow: shadow({ blur: 5, opacity: 0.15 }),
+    });
+    circleBadge(s, { x: 0.92, y: y + 0.19, d: 0.5, fill: i === 4 ? TEAL : NAVY, label: n, size: 14 });
+    s.addText(t, {
+      x: 1.58, y: y + 0.1, w: 4.0, h: 0.35, margin: 0, valign: "middle",
+      fontFace: HEAD, fontSize: 17, bold: true, color: NAVY,
+    });
+    s.addText(blurbs[i], {
+      x: 1.58, y: y + 0.45, w: 10.6, h: 0.32, margin: 0,
+      fontFace: TEXT, fontSize: 12.5, color: BODY,
+    });
+  });
+  s.addNotes(
+    "[15s · clock 0:38]\n\nFive parts. Background is deliberately from scratch, so if you " +
+    "have never seen a loss function you will still follow the result at the end. Most of the " +
+    "time goes to the last two sections."
+  );
+  return s;
+}
+
+// ============================================================= MOTIVATION
+function motivationSlide() {
+  const s = lightSlide("The problem, and what we set out to do", "Introduction");
+
+  card(s, { x: 0.6, y: 1.55, w: 12.1, h: 1.12, fill: "FBEDEE", line: "F0CFD2" });
+  s.addText("The observation this project starts from", {
+    x: 0.95, y: 1.7, w: 11.4, h: 0.3, margin: 0,
+    fontFace: TEXT, fontSize: 11.5, bold: true, color: CHERRY,
+  });
+  s.addText(
+    "We train classifiers to be 100% certain on every example — but at test time we only ever ask whether the right answer came first.",
+    { x: 0.95, y: 2.02, w: 11.4, h: 0.5, margin: 0, fontFace: HEAD, fontSize: 17, bold: true, color: NAVY }
+  );
+
+  const blocks = [
+    ["Research question", "If a fixed margin beats “aim for 100%”, does a margin that adapts beat a fixed one?", TEAL],
+    ["Our approach", "Let the margin vary by class pair, by example, and over training — and allow it to go negative.", "3E6FA8"],
+    ["What we deliver", "A tested implementation, five testbeds, and one replicated finding — reported with its limits.", AMBER],
+  ];
+  blocks.forEach(([h, d, col], i) => {
+    const x = 0.6 + i * 4.06;
+    card(s, { x, y: 2.95, w: 3.72, h: 2.15, fill: WHITE });
+    circleBadge(s, { x: x + 0.3, y: 3.18, d: 0.44, fill: col, label: String(i + 1), size: 14 });
+    s.addText(h, {
+      x: x + 0.88, y: 3.18, w: 2.7, h: 0.44, margin: 0, valign: "middle",
+      fontFace: HEAD, fontSize: 15.5, bold: true, color: NAVY,
+    });
+    s.addText(d, {
+      x: x + 0.3, y: 3.78, w: 3.12, h: 1.15, margin: 0,
+      fontFace: TEXT, fontSize: 12.5, color: BODY, lineSpacing: 17,
+    });
+  });
+
+  s.addShape(pres.ShapeType.roundRect, {
+    x: 0.6, y: 5.4, w: 12.1, h: 1.1, rectRadius: 0.12,
+    fill: { color: NAVY }, line: { color: NAVY },
+  });
+  s.addText("Where this ends up, so you know where I am going", {
+    x: 0.95, y: 5.52, w: 11.4, h: 0.3, margin: 0,
+    fontFace: TEXT, fontSize: 11.5, bold: true, color: "6FD8C9",
+  });
+  s.addText(
+    "The accuracy hypothesis failed. The same idea turned out to be a strong defence against wrong labels — which is a different, and smaller, claim.",
+    { x: 0.95, y: 5.84, w: 11.4, h: 0.5, margin: 0, fontFace: TEXT, fontSize: 13.5, color: WHITE }
+  );
+
+  s.addNotes(
+    "[32s · clock 1:10]\n\nThe observation this starts from: we train models to be totally " +
+    "certain on every example, but at test time we only check whether the right answer came " +
+    "first. Those are not the same requirement.\n\nHence the question: if a fixed margin " +
+    "beats aiming for 100%, does an adaptive margin beat a fixed one?\n\nI will tell you the " +
+    "ending now, so you judge the evidence rather than wait for a twist. The accuracy " +
+    "hypothesis failed. The same idea turned out to be a strong defence against wrong labels."
+  );
+  return s;
+}
+
+// ======================================================= EXPERIMENTAL SETUP
+function setupSlide() {
+  const s = lightSlide("Experimental setup", "Experimentation");
+
+  const spec = [
+    ["Model", "BERT-base, 4 epochs, batch 16, learning rate 2e-5"],
+    ["Datasets", "SST-5 — 5 classes, film reviews   ·   20 Newsgroups — 20 classes, forum posts"],
+    ["Baselines", "plain cross-entropy   ·   AS-Softmax (the published method we extend)"],
+    ["Repeats", "2–3 random seeds per method, so we can see the noise floor"],
+    ["Compute", "one 6 GB laptop GPU — about 30 minutes per run"],
+  ];
+  spec.forEach(([k, v], i) => {
+    const y = 1.6 + i * 0.66;
+    s.addShape(pres.ShapeType.roundRect, {
+      x: 0.6, y, w: 12.1, h: 0.56, rectRadius: 0.09,
+      fill: { color: i % 2 ? WHITE : CARD }, line: { color: CARD_EDGE, width: 1 },
+    });
+    s.addText(k, {
+      x: 0.95, y, w: 2.1, h: 0.56, margin: 0, valign: "middle",
+      fontFace: TEXT, fontSize: 12.5, bold: true, color: MUTED,
+    });
+    s.addText(v, {
+      x: 3.15, y, w: 9.3, h: 0.56, margin: 0, valign: "middle",
+      fontFace: TEXT, fontSize: 13, color: NAVY,
+    });
+  });
+
+  card(s, { x: 0.6, y: 5.15, w: 5.85, h: 1.42, fill: "E9F5F3", line: "BFE0DA" });
+  s.addText("Success criterion, fixed before we looked", {
+    x: 0.92, y: 5.32, w: 5.2, h: 0.3, margin: 0,
+    fontFace: TEXT, fontSize: 11.5, bold: true, color: TEAL,
+  });
+  s.addText("Beat AS-Softmax by ≥ 0.3% accuracy, averaged over seeds", {
+    x: 0.92, y: 5.66, w: 5.2, h: 0.7, margin: 0,
+    fontFace: TEXT, fontSize: 13.5, color: NAVY, lineSpacing: 18,
+  });
+
+  card(s, { x: 6.85, y: 5.15, w: 5.85, h: 1.42, fill: WHITE });
+  s.addText("What we measured", {
+    x: 7.17, y: 5.32, w: 5.2, h: 0.3, margin: 0,
+    fontFace: TEXT, fontSize: 11.5, bold: true, color: MUTED,
+  });
+  s.addText("Accuracy at its best and its final epoch, calibration, and — critically — memorisation of wrong labels",
+    { x: 7.17, y: 5.66, w: 5.2, h: 0.75, margin: 0, fontFace: TEXT, fontSize: 12.5, color: NAVY, lineSpacing: 17 });
+
+  s.addNotes(
+    "[32s · clock 5:37]\n\nBERT-base on two text datasets — SST-5 with five classes, 20 " +
+    "Newsgroups with twenty. Compared against plain cross-entropy and AS-Softmax, two to " +
+    "three seeds each, which is what tells us the noise floor. All on one 6 GB laptop " +
+    "GPU.\n\nTwo things for the record: the success bar was fixed before we saw any results, " +
+    "and we measured more than accuracy — including memorisation, which is what eventually " +
+    "explained everything."
+  );
+  return s;
+}
+
+// ==================================================== EXPERIMENTAL PROGRAMME
+function programmeSlide() {
+  const s = lightSlide("What we ran, in two phases", "Experimentation");
+
+  card(s, { x: 0.6, y: 1.55, w: 5.85, h: 2.5, fill: WHITE });
+  circleBadge(s, { x: 0.92, y: 1.8, d: 0.5, fill: "3E6FA8", label: "1" });
+  s.addText("Phase 1 — clean labels", {
+    x: 1.56, y: 1.8, w: 4.6, h: 0.5, margin: 0, valign: "middle",
+    fontFace: HEAD, fontSize: 17, bold: true, color: NAVY,
+  });
+  s.addText(
+    [
+      { text: "SST-5, class-pair margin, 3 seeds", options: { bullet: true, breakLine: true } },
+      { text: "SST-5 tuning screen — was it under-tuned?", options: { bullet: true, breakLine: true } },
+      { text: "20 Newsgroups, class-pair margin", options: { bullet: true } },
+    ],
+    { x: 0.95, y: 2.45, w: 5.2, h: 1.4, margin: 0, fontFace: TEXT, fontSize: 12.5, color: BODY, paraSpaceAfter: 7 }
+  );
+
+  card(s, { x: 6.85, y: 1.55, w: 5.85, h: 2.5, fill: "E9F5F3", line: "BFE0DA" });
+  circleBadge(s, { x: 7.17, y: 1.8, d: 0.5, fill: TEAL, label: "2" });
+  s.addText("Phase 2 — 40% wrong labels", {
+    x: 7.81, y: 1.8, w: 4.6, h: 0.5, margin: 0, valign: "middle",
+    fontFace: HEAD, fontSize: 17, bold: true, color: NAVY,
+  });
+  s.addText(
+    "Added when Phase 1 came back flat. Real datasets contain wrong labels, a large model will " +
+    "memorise them, and margin methods are supposed to help exactly there.",
+    { x: 7.2, y: 2.45, w: 5.2, h: 1.4, margin: 0, fontFace: TEXT, fontSize: 12.5, color: BODY, lineSpacing: 18 }
+  );
+
+  s.addText("How the noisy testbed is built", {
+    x: 0.6, y: 4.28, w: 12.1, h: 0.32, margin: 0,
+    fontFace: TEXT, fontSize: 12.5, bold: true, color: MUTED,
+  });
+  const setup = [
+    ["40%", "of training labels deliberately corrupted", CHERRY],
+    ["100%", "of validation labels kept clean, so we always measure real quality", TEAL],
+    ["Identical", "corruption for every method — an exact comparison, not a statistical one", "3E6FA8"],
+  ];
+  setup.forEach(([v, l, col], i) => {
+    const y = 4.7 + i * 0.66;
+    s.addShape(pres.ShapeType.roundRect, {
+      x: 0.6, y, w: 12.1, h: 0.56, rectRadius: 0.09,
+      fill: { color: WHITE }, line: { color: CARD_EDGE, width: 1 }, shadow: shadow({ blur: 5, opacity: 0.15 }),
+    });
+    s.addText(v, {
+      x: 0.95, y, w: 1.6, h: 0.56, margin: 0, valign: "middle",
+      fontFace: HEAD, fontSize: 18, bold: true, color: col,
+    });
+    s.addText(l, {
+      x: 2.65, y, w: 9.7, h: 0.56, margin: 0, valign: "middle",
+      fontFace: TEXT, fontSize: 13, color: NAVY,
+    });
+  });
+
+  s.addNotes(
+    "[35s · clock 6:12]\n\nTwo phases. Phase one, clean labels: three experiments on the " +
+    "class-pair margin, including a tuning screen to check we had not simply under-tuned " +
+    "it.\n\nPhase two we added when phase one came back flat — 40% wrong labels. Every real " +
+    "dataset has some, a big model will memorise them, and margin methods are supposed to be " +
+    "good exactly there.\n\nTwo details make it trustworthy: validation labels stay clean, " +
+    "and every method sees the identical corrupted labels — an exact comparison, not a " +
+    "statistical one."
+  );
+  return s;
+}
+
+// ---------------------------------------------- original slide 1
+function orig1() {
   const s = pres.addSlide();
   s.background = { color: NAVY };
 
@@ -154,18 +417,16 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
     fontFace: TEXT, fontSize: 13, color: "7C8AA5",
   });
   s.addNotes(
-    "[30s   ·   clock 0:30]\n\n" +
-    "Hi everyone. This is a research project on classification loss functions.\n\n" +
-    "The one-line version: there's a published method that replaces the usual training " +
-    "objective with a 'margin' rule. We tried to make that margin smarter. I'll tell you " +
-    "what we tried, what failed, and the one thing that actually worked.\n\n" +
-    "I'm going to start from the absolute basics, so nobody gets lost."
+    "[20s · clock 0:20]\n\nA research project on classification loss functions.\n\nThere is a " +
+    "published method that replaces the usual training objective with a 'margin' rule. We " +
+    "tried to make that margin smarter. I will tell you what we tried, what failed, and the " +
+    "one thing that worked."
   );
 }
 
-// =====================================================================  2
-{
-  const s = lightSlide("A classifier is a student taking a multiple-choice test", "The basics");
+// ---------------------------------------------- original slide 2
+function orig2() {
+  const s = lightSlide("A classifier is a student taking a multiple-choice test", "Background · the basics");
 
   s.addText(
     "For every input, the model gives each possible answer a score. " +
@@ -211,20 +472,17 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 
   s.addNotes(
-    "[35s   ·   clock 1:05]\n\n" +
-    "Simplest possible framing. A classifier is a student answering multiple-choice questions.\n\n" +
-    "For each question it scores every option, and softmax squashes those scores into " +
-    "percentages that sum to 100.\n\n" +
-    "Here the model reads a bad film review and puts 55% on 'very negative'. It's right — " +
-    "because 'very negative' is AHEAD of everything else.\n\n" +
-    "Key point to plant now: being right only requires being ahead. It does NOT require 100%. " +
-    "That gap is where this entire project lives."
+    "[30s · clock 1:43]\n\nA classifier is a student answering multiple-choice questions. It " +
+    "scores every option, and softmax squashes those scores into percentages summing to " +
+    "100.\n\nHere it reads a bad review and puts 55% on 'very negative'. It is right — " +
+    "because that answer is AHEAD of the others.\n\nBeing right only requires being ahead. It " +
+    "does not require 100%. That gap is where this project lives."
   );
 }
 
-// =====================================================================  3
-{
-  const s = lightSlide("But normal training demands 100% — forever", "The problem");
+// ---------------------------------------------- original slide 3
+function orig3() {
+  const s = lightSlide("But normal training demands 100% — forever", "Background · the problem");
 
   s.addText(
     "Cross-entropy, the standard training objective, keeps pushing the correct answer " +
@@ -271,19 +529,18 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 
   s.addNotes(
-    "[40s   ·   clock 1:45]\n\n" +
-    "Here's the problem. Standard training — cross-entropy — is never satisfied.\n\n" +
-    "Left: the model is already right, 55% on the correct answer. Test passed.\n\n" +
-    "Right: cross-entropy keeps pushing anyway, to 99%. That extra work buys you nothing " +
-    "at test time, because the test only asked 'is it ahead?'\n\n" +
-    "Three costs: wasted effort; overfitting, because to reach 99% on hard examples it " +
-    "starts memorising them; and the loss stops correlating with accuracy."
+    "[35s · clock 2:18]\n\nStandard training — cross-entropy — is never satisfied.\n\nLeft: " +
+    "the model is already right, 55% on the correct answer. Test passed.\n\nRight: " +
+    "cross-entropy keeps pushing to 99%. That extra work buys nothing at test time, because " +
+    "the test only asked whether it was ahead.\n\nThree costs: wasted effort; overfitting, " +
+    "because reaching 99% on hard examples means memorising them; and the loss stops " +
+    "correlating with accuracy."
   );
 }
 
-// =====================================================================  4
-{
-  const s = lightSlide("The paper we build on: AS-Softmax (Lv et al., 2023)", "Prior work");
+// ---------------------------------------------- original slide 4
+function orig4() {
+  const s = lightSlide("The paper we build on: AS-Softmax (Lv et al., 2023)", "Background · prior work");
 
   card(s, { x: 0.6, y: 1.55, w: 12.1, h: 1.5, fill: "E9F5F3", line: "BFE0DA" });
   s.addText("Their rule:", {
@@ -334,22 +591,19 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 
   s.addNotes(
-    "[45s   ·   clock 2:30]\n\n" +
-    "This is the paper we build on — AS-Softmax, 2023.\n\n" +
-    "Their fix: don't demand 100%, demand a gap. Once the right answer beats a wrong one " +
-    "by delta, drop that wrong answer and stop pushing.\n\n" +
-    "They reported better accuracy, better calibration, less overfitting, about 1.2x faster " +
-    "training — and this striking number: the correlation between loss and validation " +
-    "accuracy went from basically zero to minus 0.95. The loss finally tracks quality.\n\n" +
-    "Tested broadly — six text datasets, images, audio.\n\n" +
-    "And here is the door they leave open, our starting point: delta is ONE number, for " +
-    "every class pair, every example, every moment of training."
+    "[42s · clock 3:00]\n\nThis is the paper we build on — AS-Softmax, 2023.\n\nTheir fix: do " +
+    "not demand 100%, demand a gap. Once the right answer beats a wrong one by delta, drop " +
+    "that wrong answer and stop pushing.\n\nThey reported better accuracy, better " +
+    "calibration, less overfitting, about 1.2x faster training — and this striking number: " +
+    "the correlation between loss and validation accuracy went from roughly zero to minus " +
+    "0.95.\n\nAnd here is the door they leave open, our starting point: delta is ONE number, " +
+    "for every class pair, every example, every moment of training."
   );
 }
 
-// =====================================================================  5
-{
-  const s = lightSlide("Our idea: one number for everything is too crude", "Our approach");
+// ---------------------------------------------- original slide 5
+function orig5() {
+  const s = lightSlide("Our idea: one number for everything is too crude", "Methodology · our approach");
 
   s.addShape(pres.ShapeType.roundRect, {
     x: 3.55, y: 1.5, w: 6.2, h: 0.72, rectRadius: 0.14,
@@ -393,22 +647,17 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 
   s.addNotes(
-    "[45s   ·   clock 3:15]\n\n" +
-    "So here's our idea. If one gap is good, a gap that ADAPTS should be better.\n\n" +
-    "Three directions it could adapt in.\n\n" +
-    "One, class-pair: cat versus dog is a harder distinction than cat versus aeroplane, so " +
-    "they shouldn't share a gap.\n\n" +
-    "Two, sample: individual examples differ. Some are ambiguous, some are just wrong.\n\n" +
-    "Three, time: at the start the model is guessing, so a strict gap is dangerous. Start " +
-    "loose and tighten.\n\n" +
-    "Important methodological point: we test these ONE AT A TIME, so if something improves " +
-    "we know exactly what caused it."
+    "[35s · clock 3:38]\n\nOur idea: if one gap is good, a gap that ADAPTS should be better. " +
+    "Three directions.\n\nClass-pair: cat versus dog is harder than cat versus aeroplane, so " +
+    "they should not share a gap. Sample: individual examples differ — some ambiguous, some " +
+    "just wrong. Time: early on the model is guessing, so start loose and tighten.\n\nWe test " +
+    "these one at a time, so any gain traces to a specific cause."
   );
 }
 
-// =====================================================================  6
-{
-  const s = lightSlide("What we built", "Engineering");
+// ---------------------------------------------- original slide 6
+function orig6() {
+  const s = lightSlide("What we implemented", "Methodology · implementation");
 
   const stats = [
     ["9", "loss functions implemented\nand unit-tested"],
@@ -436,40 +685,45 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   );
 
   card(s, { x: 6.9, y: 3.85, w: 5.8, h: 2.85, fill: WHITE });
-  s.addText("How we tested it", {
+  s.addText("The three variants we built", {
     x: 7.25, y: 4.1, w: 5.1, h: 0.35, margin: 0, fontFace: HEAD, fontSize: 18, bold: true, color: NAVY,
   });
-  const setup = [
-    ["Model", "BERT-base"],
-    ["Datasets", "SST-5 (5 classes) · 20 Newsgroups (20 classes)"],
-    ["Compared against", "plain cross-entropy and AS-Softmax"],
-    ["Success bar, set in advance", "beat AS-Softmax by ≥ 0.3% accuracy"],
+  const variants = [
+    ["M3", "class-pair", "δ from a learned low-rank matrix over class pairs", TEAL],
+    ["M4", "sample", "δ from batch-relative confidence — may go negative", CHERRY],
+    ["M6", "combined", "M4 modulating M3, so δ varies on all three axes", "3E6FA8"],
   ];
-  setup.forEach(([k, v], i) => {
-    const y = 4.68 + i * 0.5;
-    s.addText(k, {
-      x: 7.25, y, w: 2.3, h: 0.3, margin: 0, fontFace: TEXT, fontSize: 11.5, bold: true, color: MUTED, valign: "middle",
+  variants.forEach(([tag, name, desc, col], i) => {
+    const y = 4.62 + i * 0.68;
+    s.addShape(pres.ShapeType.roundRect, {
+      x: 7.25, y, w: 0.72, h: 0.34, rectRadius: 0.07,
+      fill: { color: col }, line: { color: col },
     });
-    s.addText(v, {
-      x: 9.35, y, w: 3.0, h: 0.3, margin: 0, fontFace: TEXT, fontSize: 11.5, color: NAVY, valign: "middle",
+    s.addText(tag, {
+      x: 7.25, y, w: 0.72, h: 0.34, align: "center", valign: "middle", margin: 0,
+      fontFace: TEXT, fontSize: 11, bold: true, color: WHITE,
+    });
+    s.addText(name, {
+      x: 8.08, y, w: 1.5, h: 0.34, margin: 0, valign: "middle",
+      fontFace: TEXT, fontSize: 12.5, bold: true, color: NAVY,
+    });
+    s.addText(desc, {
+      x: 7.25, y: y + 0.32, w: 5.1, h: 0.3, margin: 0,
+      fontFace: TEXT, fontSize: 11, color: BODY,
     });
   });
 
   s.addNotes(
-    "[40s   ·   clock 3:55]\n\n" +
-    "Briefly, what we built — because the result only matters if the code is trustworthy.\n\n" +
-    "Nine loss functions, seventy passing tests, three margin variants, all on one 6 GB " +
-    "laptop GPU.\n\n" +
-    "Two things worth noting. There is a test proving our loss becomes EXACTLY AS-Softmax " +
-    "when the gap is held constant — so we always compare a strict generalisation, not a " +
-    "different loss. And we set the success bar in advance: beat AS-Softmax by 0.3%. " +
-    "Setting that before you see results is what stops you fooling yourself."
+    "[22s · clock 5:02]\n\nWhat we implemented. Nine loss functions, seventy passing tests, " +
+    "three margin variants.\n\nOne thing worth noting: a test proves our loss becomes EXACTLY " +
+    "AS-Softmax when the gap is held constant — so we always compare a strict generalisation, " +
+    "not a different loss."
   );
 }
 
-// =====================================================================  7
-{
-  const s = darkSlide("Then we ran it. It did not work.", "Results, part 1");
+// ---------------------------------------------- original slide 7
+function orig7() {
+  const s = darkSlide("Then we ran it. It did not work.", "Results · what failed");
 
   s.addText(
     "Four testbeds. On accuracy, nothing separated — every difference was smaller than the " +
@@ -522,87 +776,19 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   );
 
   s.addNotes(
-    "[50s   ·   clock 4:45]\n\n" +
-    "Then we ran it, and it did not work. I want to be straight about that.\n\n" +
-    "Four testbeds. Our class-pair gap never beat AS-Softmax by more than the noise between " +
-    "two runs of the same method. We checked whether we had simply under-tuned it — we let " +
-    "the gap learn harder and it got monotonically WORSE. So not a tuning problem.\n\n" +
-    "The diagnosis is at the bottom, and it is the real finding. The problem was not our " +
-    "idea, it was underneath us: AS-Softmax itself did not reliably beat plain cross-entropy " +
-    "in our hands. We were generalising an advantage that was not there.\n\n" +
-    "That is where a lot of projects quietly stop. We changed the question instead."
+    "[45s · clock 7:00]\n\nIt did not work, and I want to be straight about that.\n\nFour " +
+    "testbeds. Our class-pair gap never beat AS-Softmax by more than the noise between two " +
+    "runs of the same method. We checked whether we had under-tuned it — we let the gap learn " +
+    "harder and it got monotonically WORSE.\n\nThe diagnosis at the bottom is the real " +
+    "finding. The problem was not our idea, it was underneath us: AS-Softmax itself did not " +
+    "reliably beat plain cross-entropy in our hands. We were generalising an advantage that " +
+    "was not there.\n\nThat is where many projects quietly stop. We changed the question."
   );
 }
 
-// =====================================================================  8
-{
-  const s = lightSlide("So we changed the question", "The pivot");
-
-  card(s, { x: 0.6, y: 1.55, w: 5.85, h: 1.3, fill: "F4F1EC", line: "DED7CC" });
-  s.addText("We had been asking", {
-    x: 0.95, y: 1.72, w: 5.15, h: 0.3, margin: 0, fontFace: TEXT, fontSize: 11.5, bold: true, color: MUTED,
-  });
-  s.addText("“Is it more accurate?”", {
-    x: 0.95, y: 2.05, w: 5.15, h: 0.5, margin: 0, fontFace: HEAD, fontSize: 21, bold: true, color: "76839A",
-  });
-
-  card(s, { x: 6.85, y: 1.55, w: 5.85, h: 1.3, fill: "E9F5F3", line: "BFE0DA" });
-  s.addText("We started asking", {
-    x: 7.2, y: 1.72, w: 5.15, h: 0.3, margin: 0, fontFace: TEXT, fontSize: 11.5, bold: true, color: TEAL,
-  });
-  s.addText("“Does it resist bad labels?”", {
-    x: 7.2, y: 2.05, w: 5.15, h: 0.5, margin: 0, fontFace: HEAD, fontSize: 21, bold: true, color: NAVY,
-  });
-
-  s.addText(
-    "Real datasets contain wrong labels. A big model will happily memorise them, and that is what " +
-    "destroys accuracy late in training. Margin methods are supposed to help exactly here — so we built a test for it.",
-    { x: 0.6, y: 3.1, w: 12.1, h: 0.7, margin: 0, fontFace: TEXT, fontSize: 15, color: BODY, lineSpacing: 21 }
-  );
-
-  const setup = [
-    ["40%", "of training labels deliberately corrupted", CHERRY],
-    ["100%", "of validation labels kept clean, so we measure real quality", TEAL],
-    ["Identical", "corruption for every method — an exact comparison, not a statistical one", "3E6FA8"],
-  ];
-  setup.forEach(([v, l, col], i) => {
-    const y = 4.05 + i * 0.78;
-    s.addShape(pres.ShapeType.roundRect, {
-      x: 0.6, y, w: 12.1, h: 0.66, rectRadius: 0.1,
-      fill: { color: WHITE }, line: { color: CARD_EDGE, width: 1 }, shadow: shadow({ blur: 6, opacity: 0.18 }),
-    });
-    s.addText(v, {
-      x: 0.95, y, w: 1.55, h: 0.66, margin: 0, valign: "middle",
-      fontFace: HEAD, fontSize: 20, bold: true, color: col,
-    });
-    s.addText(l, {
-      x: 2.6, y, w: 9.8, h: 0.66, margin: 0, valign: "middle",
-      fontFace: TEXT, fontSize: 13.5, color: NAVY,
-    });
-  });
-
-  s.addText("New measurement: not just accuracy, but how much of the corrupted labels the model actually memorised.", {
-    x: 0.6, y: 6.4, w: 12.1, h: 0.34, margin: 0,
-    fontFace: TEXT, fontSize: 13, italic: true, bold: true, color: TEAL,
-  });
-
-  s.addNotes(
-    "[45s   ·   clock 5:30]\n\n" +
-    "So we changed the question — from 'is it more accurate' to 'does it resist bad labels'.\n\n" +
-    "Every real dataset contains wrong labels, and a model like BERT will cheerfully " +
-    "memorise them. That is what wrecks accuracy late in training, and margin methods are " +
-    "supposed to be good at exactly this.\n\n" +
-    "So: we corrupt 40% of training labels. Validation stays clean, so we always measure " +
-    "real quality. And every method sees the IDENTICAL corrupted labels — an exact " +
-    "comparison, not a statistical one.\n\n" +
-    "We also added the measurement that unlocked the project: how much of the corrupted " +
-    "labels did the model actually memorise?"
-  );
-}
-
-// =====================================================================  9
-{
-  const s = lightSlide("The new idea: let the gap go NEGATIVE", "Our contribution");
+// ---------------------------------------------- original slide 9
+function orig9() {
+  const s = lightSlide("The new idea: let the gap go NEGATIVE", "Methodology · the key idea");
 
   s.addText(
     "Nothing in the maths says a margin has to be positive. The gap p_t − p_j lives between −1 and +1, " +
@@ -657,25 +843,23 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   );
 
   s.addNotes(
-    "[70s   ·   clock 6:40]\n\n" +
-    "This is the idea I'd most like you to take away.\n\n" +
-    "A margin doesn't have to be positive. The gap between two probabilities runs from minus " +
-    "one to plus one, so a NEGATIVE margin is perfectly legal. It means: drop this wrong " +
-    "answer even if it's currently winning.\n\n" +
-    "Why that's powerful — left box. Take an example whose label is wrong. The model has seen " +
-    "thousands of correct examples, so it correctly distrusts this label and gives it low " +
-    "probability. But that means nothing ever gets far enough ahead to be dropped, so the " +
-    "model keeps getting pushed to fit the wrong label. That IS memorisation.\n\n" +
-    "Right box: with a negative gap, every competitor gets dropped, there's nothing left to " +
-    "train against, and the example removes itself from training.\n\n" +
-    "And the nice part: 'throw away suspicious examples' is a known trick in this field. " +
-    "Written our way it isn't a separate trick any more — it's just a margin that went negative."
+    "[62s · clock 4:40]\n\nThis is the idea I would most like you to take away.\n\nA margin " +
+    "does not have to be positive. The gap between two probabilities runs from minus one to " +
+    "plus one, so a NEGATIVE margin is legal. It means: drop this wrong answer even if it is " +
+    "currently winning.\n\nWhy that is powerful — left box. Take an example whose label is " +
+    "wrong. The model has seen thousands of correct examples, so it correctly distrusts this " +
+    "label and gives it low probability. But that means nothing ever gets far enough ahead to " +
+    "be dropped, so the model keeps being pushed to fit the wrong label. That IS " +
+    "memorisation.\n\nRight box: with a negative gap every competitor is dropped, nothing is " +
+    "left to train against, and the example removes itself.\n\nAnd 'throw away suspicious " +
+    "examples' is a known trick in this field. Written our way it is not a separate trick — " +
+    "it is a margin that went negative."
   );
 }
 
-// ===================================================================== 10
-{
-  const s = lightSlide("This one worked", "Results, part 2");
+// ---------------------------------------------- original slide 10
+function orig10() {
+  const s = lightSlide("This one worked", "Results · what worked");
 
   s.addChart(
     pres.ChartType.line,
@@ -727,25 +911,20 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   );
 
   s.addNotes(
-    "[60s   ·   clock 7:40]\n\n" +
-    "And this worked.\n\n" +
-    "The chart is memorisation of the corrupted labels over training — lower is better.\n\n" +
-    "Grey is plain cross-entropy, climbing to 34%. Red is AS-Softmax, and notice it's the " +
-    "WORST at 40% — I'll come back to that. Amber is our class-pair idea, no better than " +
-    "cross-entropy. Teal is the sample gap: it flattens out at 19%.\n\n" +
-    "Roughly four times less memorisation, and at the end of training it's 2.8 points more " +
-    "accurate than cross-entropy. And it replicated on both random seeds — the two runs gave " +
-    "almost identical numbers, so this isn't a lucky seed.\n\n" +
-    "One more thing worth flagging: AS-Softmax memorised MORE than plain cross-entropy, on " +
-    "both seeds. That contradicts the standard argument for why margin methods should help " +
-    "with noisy labels. That's a genuine negative finding and nobody could have seen it by " +
-    "looking at accuracy alone."
+    "[57s · clock 7:57]\n\nAnd this worked. The chart is memorisation of corrupted labels " +
+    "over training — lower is better.\n\nGrey is plain cross-entropy, climbing to 34%. Red is " +
+    "AS-Softmax, and notice it is the WORST at 40%. Amber is our class-pair idea, no better " +
+    "than cross-entropy. Teal is the sample gap: it flattens at 19%.\n\nRoughly four times " +
+    "less memorisation, and at the end of training 2.8 points more accurate than " +
+    "cross-entropy — replicated on both seeds.\n\nOne more thing: AS-Softmax memorised MORE " +
+    "than plain cross-entropy, on both seeds. That contradicts the standard argument for " +
+    "margin methods under noisy labels, and nobody could see it by looking at accuracy alone."
   );
 }
 
-// ===================================================================== 11
-{
-  const s = lightSlide("Being honest about what we can claim", "Rigour");
+// ---------------------------------------------- original slide 11
+function orig11() {
+  const s = lightSlide("Being honest about what we can claim", "Results · rigour");
 
   s.addText(
     "With only two runs per method, some of these numbers are solid and some are not. We grade them separately.",
@@ -785,20 +964,19 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 
   s.addNotes(
-    "[45s   ·   clock 8:25]\n\n" +
-    "A moment on rigour, because this is where a project like this earns trust or loses it.\n\n" +
-    "Two runs per method is not many, so we graded every claim separately.\n\n" +
-    "Confirmed: the memorisation result — both runs nearly identical, and the effect is about " +
-    "twenty times the measurement's own noise. Rejected: our original class-pair idea.\n\n" +
-    "This row matters most. The half-point gain on best-case accuracy clears the 0.3% bar we " +
-    "set in advance — but one of the two runs produced the entire gap. So we do NOT claim it. " +
-    "It would have been easy to report and move on. It would not have replicated."
+    "[40s · clock 8:37]\n\nA moment on rigour, because this is where a project earns trust or " +
+    "loses it.\n\nTwo runs per method is not many, so we graded every claim " +
+    "separately.\n\nConfirmed: the memorisation result — both runs nearly identical, effect " +
+    "about twenty times the measurement's own noise. Rejected: our original class-pair " +
+    "idea.\n\nThis row matters most. The half-point gain on best-case accuracy clears the bar " +
+    "we set in advance — but one of the two runs produced the entire gap. So we do NOT claim " +
+    "it."
   );
 }
 
-// ===================================================================== 12
-{
-  const s = lightSlide("So — is it any good?", "The verdict");
+// ---------------------------------------------- original slide 12
+function orig12() {
+  const s = lightSlide("So — is it any good?", "Results · verdict");
 
   card(s, { x: 0.6, y: 1.55, w: 3.87, h: 2.35, fill: "E9F5F3", line: "BFE0DA" });
   circleBadge(s, { x: 0.92, y: 1.8, d: 0.46, fill: TEAL, label: "✓", size: 15 });
@@ -868,20 +1046,17 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 
   s.addNotes(
-    "[45s   ·   clock 9:10]\n\n" +
-    "So, is it any good? Three answers.\n\n" +
-    "As a defence against bad labels — yes. Real, replicated, mechanism understood.\n\n" +
-    "As a general upgrade — no. Our original hypothesis was wrong and I am not going to " +
-    "dress that up.\n\n" +
-    "And it depends: the gain only appears if you cannot early-stop on clean data — which is " +
-    "precisely the situation when labels are noisy. The condition and the use case coincide.\n\n" +
-    "Two lessons: check the foundation first, and measure the mechanism, not just the score."
+    "[35s · clock 9:12]\n\nIs it any good? Three answers.\n\nAs a defence against bad labels " +
+    "— yes. Real, replicated, mechanism understood.\n\nAs a general upgrade — no. Our " +
+    "hypothesis was wrong and I am not going to dress that up.\n\nAnd it depends: the gain " +
+    "only appears if you cannot early-stop on clean data, which is precisely the situation " +
+    "when labels are noisy."
   );
 }
 
-// ===================================================================== 13
-{
-  const s = lightSlide("What we would do next", "Next steps");
+// ---------------------------------------------- original slide 13
+function orig13() {
+  const s = lightSlide("What we would do next", "Results · next steps");
 
   const items = [
     ["Finish the dial test", "Run the half-strength version. If halving the setting halves the effect, that is strong proof the mechanism is what we think it is.", "≈1 hour of GPU", TEAL],
@@ -914,19 +1089,15 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 
   s.addNotes(
-    "[30s   ·   clock 9:40]\n\n" +
-    "Four next steps, in order of value per hour.\n\n" +
-    "One, about an hour of GPU: run the half-strength version. If halving the setting halves " +
-    "the effect, that is strong evidence the mechanism is what we say. We ran out of time.\n\n" +
-    "Two, the honest one: we have not compared against methods actually built for noisy " +
-    "labels. Until we do, our claim stays narrow.\n\n" +
-    "Three, realistic noise — real mislabelling is systematic, and harder to detect.\n\n" +
-    "Four, the regimes where margins should shine: thousands of classes, or imbalanced data."
+    "[26s · clock 9:38]\n\nFour next steps. One, an hour of GPU: run the half-strength " +
+    "version — if halving the setting halves the effect, that is strong evidence for the " +
+    "mechanism. Two, compare against methods actually built for noisy labels. Three, " +
+    "realistic noise. Four, thousands of classes, where margins should really matter."
   );
 }
 
-// ===================================================================== 14
-{
+// ---------------------------------------------- original slide 14
+function orig14() {
   const s = pres.addSlide();
   s.background = { color: NAVY };
 
@@ -967,15 +1138,43 @@ function probBar(s, { x, y, w, label, pct, color, maxPct = 100, textColor = BODY
   });
 
   s.addNotes(
-    "[20s   ·   clock 10:00]\n\n" +
-    "Three things to take away.\n\n" +
-    "A margin can be negative — and once you allow that, discarding suspicious examples " +
-    "becomes a special case of a margin.\n\n" +
-    "That cut memorisation of wrong labels about fourfold, replicated.\n\n" +
-    "And it did not improve peak accuracy — our hypothesis was wrong and we report it that " +
-    "way, because a negative result you can trust beats a positive one you cannot.\n\n" +
-    "Happy to take questions."
+    "[22s · clock 10:00]\n\nThree takeaways. A margin can be negative — and then discarding " +
+    "suspicious examples becomes a special case of a margin. That cut memorisation about " +
+    "fourfold. And it did not improve peak accuracy — our hypothesis was wrong and we report " +
+    "it that way.\n\nHappy to take questions."
   );
 }
+
+// =====================================================================
+//  FINAL SLIDE ORDER — Introduction · Background · Methodology ·
+//                      Experimentation · Results & Demonstration
+// =====================================================================
+orig1();             // title
+
+sectionDivider(0);   // 01 INTRODUCTION
+agendaSlide();       // what I will cover
+motivationSlide();   // problem, question, contributions
+
+sectionDivider(1);   // 02 BACKGROUND
+orig2();             // softmax: a classifier as a multiple-choice test
+orig3();             // cross-entropy demands 100% forever
+orig4();             // AS-Softmax (Lv et al. 2023)
+
+sectionDivider(2);   // 03 METHODOLOGY
+orig5();             // the three axes
+orig9();             // the key idea: a negative margin
+orig6();             // implementation + the three variants
+
+sectionDivider(3);   // 04 EXPERIMENTATION
+setupSlide();        // model, data, baselines, criterion
+programmeSlide();    // two phases; the noisy-label protocol
+
+sectionDivider(4);   // 05 RESULTS & DEMONSTRATION
+orig7();             // what failed
+orig10();            // what worked
+orig11();            // what we can and cannot claim
+orig12();            // verdict
+orig13();            // next steps
+orig14();            // close
 
 pres.writeFile({ fileName: "GAM-Softmax-Presentation.pptx" }).then((f) => console.log("wrote", f));
