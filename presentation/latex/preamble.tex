@@ -1,0 +1,115 @@
+% ---------------------------------------------------------------------------
+% Shared preamble for the GAM-Softmax talk.
+% Engine-agnostic: compiles with pdflatex, xelatex, lualatex or tectonic.
+% ---------------------------------------------------------------------------
+
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{lmodern}
+\fi
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc}
+
+\graphicspath{{figures/}{../../runs/final_20ng/figures/}}
+
+% ---------------------------------------------------------------- look & feel
+\usetheme{default}
+\usecolortheme{default}
+\setbeamertemplate{navigation symbols}{}
+
+\definecolor{gamblue}{RGB}{28,58,102}     % primary
+\definecolor{gamlight}{RGB}{233,238,246}  % pale fill
+\definecolor{gamaccent}{RGB}{193,63,44}   % the one finding that worked
+\definecolor{gamgrey}{RGB}{110,116,126}
+\definecolor{gamgreen}{RGB}{31,110,72}
+
+\setbeamercolor{structure}{fg=gamblue}
+\setbeamercolor{frametitle}{fg=gamblue, bg=white}
+\setbeamercolor{title}{fg=gamblue}
+\setbeamercolor{block title}{fg=white, bg=gamblue}
+\setbeamercolor{block body}{fg=black, bg=gamlight}
+\setbeamercolor{block title alerted}{fg=white, bg=gamaccent}
+\setbeamercolor{block body alerted}{fg=black, bg=gamaccent!8}
+\setbeamercolor{alerted text}{fg=gamaccent}
+\setbeamercolor{itemize item}{fg=gamblue}
+\setbeamercolor{itemize subitem}{fg=gamgrey}
+\setbeamercolor{section in toc}{fg=gamblue}
+
+\setbeamerfont{frametitle}{size=\large, series=\bfseries}
+\setbeamerfont{block title}{size=\small, series=\bfseries}
+\setbeamertemplate{itemize item}{\color{gamblue}\raisebox{0.15ex}{\tiny$\blacksquare$}}
+\setbeamertemplate{itemize subitem}{\color{gamgrey}\raisebox{0.15ex}{\tiny$\bullet$}}
+\setbeamertemplate{blocks}[rounded][shadow=false]
+
+% frame title with a rule under it
+\makeatletter
+\setbeamertemplate{frametitle}{%
+  \vskip0.6em%
+  \begin{minipage}{\textwidth}%
+    \usebeamerfont{frametitle}\usebeamercolor[fg]{frametitle}\insertframetitle\par
+    \ifx\insertframesubtitle\@empty\else%
+      \vskip0.15em{\small\normalfont\color{gamgrey}\insertframesubtitle\par}%
+    \fi%
+    \vskip0.2em{\color{gamblue}\rule{\textwidth}{0.9pt}}%
+  \end{minipage}%
+}
+\makeatother
+
+% footline: section | short title | slide number
+\setbeamercolor{gamfoot}{fg=gamgrey, bg=white}
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=\paperwidth, ht=2.25ex, dp=1.25ex,
+        leftskip=0.055\paperwidth, rightskip=0.055\paperwidth]{gamfoot}%
+      \scriptsize\insertsectionhead\hfill\insertshorttitle\hfill%
+      \insertframenumber/\inserttotalframenumber%
+    \end{beamercolorbox}%
+  }%
+  \vskip3pt%
+}
+
+% section divider pages
+\AtBeginSection[]{%
+  \begin{frame}[plain]
+    \vfill
+    \centering
+    {\color{gamgrey}\small SECTION \insertsectionnumber\ OF 5}\\[0.6em]
+    {\color{gamblue}\Large\bfseries \insertsectionhead}\\[0.8em]
+    {\color{gamblue}\rule{0.35\textwidth}{1pt}}
+    \vfill
+  \end{frame}
+}
+
+% ------------------------------------------------------------------- macros
+\newcommand{\dlt}{\delta}
+\newcommand{\dltf}{\delta_{t,j}(x,\tau)}
+\newcommand{\pt}{p_t}
+\newcommand{\keep}{\mathcal{K}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\good}[1]{\textcolor{gamgreen}{\textbf{#1}}}
+\newcommand{\hit}[1]{\textcolor{gamaccent}{\textbf{#1}}}
+\newcommand{\mhit}[1]{\textcolor{gamaccent}{#1}}   % math-mode safe (no \textbf)
+\newcommand{\quiet}[1]{\textcolor{gamgrey}{#1}}
+\newcommand{\takeaway}[1]{%
+  \vspace{0.4em}%
+  \begin{beamercolorbox}[wd=\textwidth, sep=0.5em, rounded=true]{block body}%
+    \small #1%
+  \end{beamercolorbox}%
+}
+
+% tighter lists
+\setlength{\leftmargini}{1.4em}
+\setlength{\leftmarginii}{1.2em}
+
+% notes: keep them legible on the printed script
+\setbeamerfont{note page}{size=\small}

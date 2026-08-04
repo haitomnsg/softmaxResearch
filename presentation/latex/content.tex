@@ -1,0 +1,1203 @@
+% ---------------------------------------------------------------------------
+% All frames for the GAM-Softmax talk. Included by slides.tex and notes.tex.
+% ---------------------------------------------------------------------------
+
+% =========================================================== TITLE
+\begin{frame}[plain]
+  \vfill
+  \centering
+  {\color{gamgrey}\small GENERALIZED ADAPTIVE MARGIN SOFTMAX}\\[1.0em]
+  {\color{gamblue}\huge\bfseries GAM-Softmax}\\[0.6em]
+  {\color{gamblue}\large Can we make the softmax margin \emph{smart}\\ instead of a single number?}\\[1.4em]
+  {\color{gamblue}\rule{0.4\textwidth}{1pt}}\\[1.2em]
+  {\small Ashish Gupta}\\[0.3em]
+  {\color{gamgrey}\small One RTX 3050 laptop GPU \quad$\cdot$\quad 23 May -- 31 July 2026}
+  \vfill
+  \note{%
+    Greeting. This talk is about the last layer of a neural-network classifier
+    --- the softmax --- and about one number inside a published improvement to
+    it. I will tell you what softmax is and why it needs improving, what the
+    published method does, what I proposed instead, what I built, what I ran,
+    and what came out. I will be straight with you about the outcome: the main
+    hypothesis did \emph{not} hold, and I will show you exactly how I know
+    that. One sub-part did work, and that part is the interesting maths.%
+  }
+\end{frame}
+
+% =========================================================== ROADMAP
+\begin{frame}{Where this talk goes}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \small
+      \begin{enumerate}\setlength\itemsep{0.55em}
+        \item \textbf{Introduction} --- what softmax is, and the flaw in how we train it
+        \item \textbf{Background} --- AS-Softmax and its single number $\dlt$
+        \item \textbf{Methodology} --- turning $\dlt$ into a function
+        \item \textbf{Experimentation} --- what I ran and what I measured
+        \item \textbf{Results} --- the numbers, and the verdict
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \small
+      \begin{block}{The whole talk in one line}
+        A classifier is normally told \emph{``be 100\,\% sure, forever''}.
+        A better instruction is \emph{``win by a margin $\dlt$, then stop''}.
+        I asked whether that margin should be \alert{one number} or \alert{a function}.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \note{%
+    Five sections. Roughly two minutes each. The single sentence on the right is
+    the thing to hold on to: cross-entropy, the standard training objective,
+    tells the network to be completely certain and never lets it stop. A margin
+    objective tells it to win by a fixed gap and then stop. My question was
+    whether that gap should stay a single constant, or become a function that
+    varies. Everything else is detail.%
+  }
+\end{frame}
+
+% ===========================================================================
+\section{Introduction}
+% ===========================================================================
+
+\begin{frame}{Where the softmax sits}
+  \framesubtitle{The last layer of essentially every classifier}
+  \centering
+  \resizebox{0.97\textwidth}{!}{%
+  \begin{tikzpicture}[
+      box/.style={draw=gamblue, fill=gamlight, rounded corners=2pt,
+                  minimum height=1.5em, inner sep=4pt, font=\scriptsize, align=center},
+      arr/.style={-{Stealth[length=4pt]}, gamblue, thick}]
+    \node[box] (x) {input $x$\\{\tiny a document}};
+    \node[box, right=0.7cm of x] (f) {encoder $f_\theta$\\{\tiny BERT}};
+    \node[box, right=0.7cm of f] (z) {logits $z\in\R^{n}$\\{\tiny $n$ real scores}};
+    \node[box, right=0.7cm of z, fill=gamblue!18] (s) {\textbf{softmax}};
+    \node[box, right=0.7cm of s] (p) {$p\in\R^{n}$\\{\tiny $p_i>0,\ \sum_i p_i=1$}};
+    \node[box, right=0.7cm of p] (y) {prediction\\{\tiny $\arg\max_i p_i$}};
+    \draw[arr] (x)--(f); \draw[arr] (f)--(z); \draw[arr] (z)--(s);
+    \draw[arr] (s)--(p); \draw[arr] (p)--(y);
+  \end{tikzpicture}}
+
+  \vspace{0.6em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \small\textbf{The job it performs}\\[0.2em]
+      The network emits $n$ unbounded real numbers (``logits'') --- they can be
+      negative, they do not sum to anything. Softmax is the map
+      \[ \R^{n}\ \longrightarrow\ \Delta^{n-1} \]
+      that turns them into a \emph{probability distribution} over the $n$ classes.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \small\textbf{Where it is used}\\[0.2em]
+      \begin{itemize}\setlength\itemsep{0.15em}
+        \item every classifier: text, image, audio
+        \item every language model: the distribution over the next token ($n\approx50{,}000$)
+        \item attention weights inside a Transformer
+        \item action probabilities in reinforcement learning
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \note{%
+    Read the pipeline left to right. A document goes into an encoder --- in my
+    experiments, BERT --- which produces twenty raw scores, one per class. Those
+    scores are arbitrary real numbers. To train with them, and to report a
+    confidence, we need a probability distribution: numbers that are positive
+    and add to one. That conversion is the softmax, and it maps
+    n-dimensional real space onto the probability simplex. It is not a niche
+    component --- it is the output layer of every classifier, the next-token
+    distribution of every language model, and the attention weights inside
+    Transformers.%
+  }
+\end{frame}
+
+\begin{frame}{The softmax function}
+  \[
+    p_i \;=\; \operatorname{softmax}(z)_i \;=\; \frac{e^{z_i}}{\displaystyle\sum_{j=1}^{n} e^{z_j}},
+    \qquad i = 1,\dots,n
+  \]
+  \vspace{-0.4em}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \small\textbf{Why the formula is built this way}
+      \begin{enumerate}\setlength\itemsep{0.25em}
+        \item \textbf{Positive:} $e^{z_i}>0$ always $\Rightarrow p_i>0$.
+        \item \textbf{Normalised:} dividing by the sum forces $\sum_i p_i = 1$.
+        \item \textbf{Order-preserving:} $e^{x}$ is strictly increasing, so
+              $z_i>z_j \Leftrightarrow p_i>p_j$. The prediction is unchanged.
+        \item \textbf{Smooth:} differentiable everywhere $\Rightarrow$ trainable by gradient descent.
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \small\textbf{Two properties I will use later}
+      \begin{itemize}\setlength\itemsep{0.25em}
+        \item \alert{Shift invariance:}
+              $\operatorname{softmax}(z + c\mathbf{1}) = \operatorname{softmax}(z)$,
+              since $e^{z_i+c}=e^{c}e^{z_i}$ cancels top and bottom.
+              \emph{Only differences of logits carry information} --- which is
+              why a margin is defined on a \emph{difference}.
+        \item \alert{Temperature:} $\operatorname{softmax}(z/T)$ tends to
+              $\arg\max$ as $T\!\to\!0$ and to uniform as $T\!\to\!\infty$.
+              Softmax is the \emph{smooth} version of $\max$ --- hence the name.
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \note{%
+    The formula: exponentiate every score, then divide by the total. Each design
+    choice earns its place. Exponentiation guarantees positivity. Dividing by
+    the sum guarantees the numbers add to one. Because the exponential is
+    strictly increasing, the ordering of the scores is preserved --- softmax
+    never changes which class wins. And it is smooth, so we can differentiate
+    through it, which is what makes training possible at all. Two properties
+    matter later. First, shift invariance: adding the same constant to every
+    logit changes nothing, so only \emph{differences} between logits are
+    meaningful --- that is exactly why the margin I will show you is defined on
+    a difference of probabilities. Second, with a temperature parameter softmax
+    interpolates between the hard maximum and the uniform distribution: it is a
+    soft max, which is where the name comes from.%
+  }
+\end{frame}
+
+\begin{frame}{A worked example}
+  \framesubtitle{Four classes, one document}
+  \small
+  \[
+    \text{exponentiate}\ \longrightarrow\ \text{sum}\ \longrightarrow\ \text{divide}
+    \qquad\qquad
+    p_i = \frac{e^{z_i}}{\sum_j e^{z_j}}
+  \]
+  \vspace{-0.8em}
+  \begin{columns}[T]
+    \begin{column}{0.47\textwidth}
+      \begin{table}
+        \centering\small
+        \begin{tabular}{@{}lrrr@{}}
+          \toprule
+          class & $z_i$ & $e^{z_i}$ & $p_i$ \\
+          \midrule
+          sport    & 3.2 & 24.53 & \hit{0.775} \\
+          politics & 1.3 &  3.67 & 0.116 \\
+          medicine & 0.2 &  1.22 & 0.039 \\
+          religion & 0.8 &  2.23 & 0.070 \\
+          \midrule
+          \multicolumn{2}{@{}l}{total} & 31.65 & 1.000 \\
+          \bottomrule
+        \end{tabular}
+      \end{table}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Check the shift invariance.} Subtract $3.2$ from every logit:
+      \[ z' = (0,\,-1.9,\,-3.0,\,-2.4) \]
+      \[ e^{z'} = (1,\ 0.150,\ 0.050,\ 0.091),\ \ \text{sum}=1.291 \]
+      \[ p' = (0.775,\ 0.116,\ 0.039,\ 0.070) = p \]
+      \takeaway{Identical. The absolute size of a logit means nothing; only the
+      gaps between logits do. \textbf{This is the whole reason a ``margin'' is
+      the natural thing to control.}}
+    \end{column}
+  \end{columns}
+  \note{%
+    Concretely, with four classes. Exponentiate: 3.2 becomes 24.5, and note how
+    violently the exponential separates things --- a logit gap of 1.9 became a
+    factor of about seven. Sum the exponentials, divide, and you get a valid
+    distribution: 77.5 percent on sport. Now the check on the right. Subtract
+    3.2 from every logit so the largest becomes zero. The exponentials all
+    change, the sum changes, but every probability is exactly what it was. That
+    is shift invariance, and it is the mathematical reason the rest of this talk
+    is about \emph{differences}: only the gap between the correct class and a
+    competitor carries information.%
+  }
+\end{frame}
+
+\begin{frame}{How we train it: cross-entropy}
+  \framesubtitle{And the flaw hiding in its gradient}
+  \small
+  With true class $t$ and one-hot label $y$, the loss is
+  \[
+    L \;=\; -\sum_{i=1}^{n} y_i \log p_i \;=\; \alert{-\log p_t}
+    \qquad\text{(only the true-class term survives)}
+  \]
+  Differentiating through the softmax gives a famously clean gradient:
+  \[
+    \frac{\partial L}{\partial z_j} \;=\; p_j - y_j
+    \qquad\Longrightarrow\qquad
+    \frac{\partial L}{\partial z_t} \;=\; \mhit{p_t - 1},
+    \qquad
+    \frac{\partial L}{\partial z_j} \;=\; p_j \ \ (j\neq t)
+  \]
+
+  \begin{columns}[T]
+    \begin{column}{0.54\textwidth}
+      \textbf{Read the gradient.}
+      \begin{itemize}\setlength\itemsep{0.2em}
+        \item It vanishes \emph{only} when $p_t = 1$ exactly and every $p_j = 0$.
+        \item But $p_i = e^{z_i}/\sum_j e^{z_j} > 0$ strictly --- $p_t=1$ is
+              \alert{unreachable} for finite logits.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \takeaway{\textbf{Cross-entropy never stops pushing.} At $p_t = 0.99$ it
+      still pulls with $-0.01$, and it will keep pulling for as long as you
+      train. There is no notion of ``this example is done''.}
+    \end{column}
+  \end{columns}
+  \note{%
+    Training uses cross-entropy. Because the label is one-hot, the sum collapses
+    to a single term: minus the log of the probability assigned to the correct
+    class. Differentiate that through the softmax and you get one of the
+    tidiest results in machine learning --- the gradient with respect to the
+    logits is simply predicted minus actual, p minus y. Now look at when that
+    gradient is zero. It requires the correct class to have probability exactly
+    one. But softmax output is a ratio of positive exponentials, so every
+    probability is strictly positive and exactly one is unreachable. The
+    consequence is the flaw: cross-entropy has no concept of an example being
+    finished. At ninety-nine percent confidence it is still pulling, and it will
+    pull forever.%
+  }
+\end{frame}
+
+\begin{frame}{Why ``never stops'' is a real problem}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \small
+      \begin{enumerate}\setlength\itemsep{0.5em}
+        \item \textbf{Wasted effort.} With $n=20$ classes, 19 of the 20 slots
+              per example get gradient at every step --- including classes that
+              were hopeless from epoch one.
+        \item \textbf{Overconfidence.} The objective's only fixed point is total
+              certainty, so probabilities get pushed to extremes and stop being
+              honest confidences.
+        \item \alert{Memorisation of wrong labels.} If a training label is
+              \emph{incorrect}, cross-entropy pushes the model to fit it just as
+              hard. Given enough steps it succeeds.
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \small
+      \begin{alertblock}{The point that drives this project}
+        A deep network has enough capacity to fit \emph{arbitrary} labels,
+        including random ones. Cross-entropy gives it no reason to stop --- so
+        with noisy labels, it memorises the noise.
+      \end{alertblock}
+      \takeaway{The natural fix: \textbf{stop pushing once the answer is clearly
+      right}. Now we need to define ``clearly''.}
+    \end{column}
+  \end{columns}
+  \note{%
+    Three consequences. First, wasted effort: with twenty classes, nineteen
+    slots per example receive gradient every single step, including classes
+    that were never plausible. Second, overconfidence --- the only fixed point
+    of the objective is total certainty, so the probabilities stop being
+    trustworthy confidences. Third, and this is the one that drives the whole
+    project: if a training label is simply wrong, cross-entropy pushes the model
+    to fit the wrong label with exactly the same force. And a large network has
+    enough capacity to succeed --- it will memorise the mistake. So the obvious
+    fix is to give the objective a way to say ``this example is done, stop''.
+    The rest of the talk is about how to define \emph{done}.%
+  }
+\end{frame}
+
+% ===========================================================================
+\section{Background}
+% ===========================================================================
+
+\begin{frame}{AS-Softmax (Lv et al., 2023) --- the method I build on}
+  \small
+  \textbf{The rule.} For a training example with true class $t$, \emph{drop}
+  a competing class $j$ from the loss as soon as it is beaten by a margin $\dlt$:
+  \vspace{-0.4em}
+  \[
+    \text{mask } j \iff p_t - p_j \geq \dlt,
+    \qquad
+    \keep(x) = \{t\} \cup \{\, j\neq t : p_t - p_j < \dlt \,\},
+    \qquad
+    L_{\mathrm{AS}} = -\log \frac{e^{z_t}}{\sum_{k \in \keep(x)} e^{z_k}}
+  \]
+  \vspace{-1.0em}
+
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{center}
+      \begin{tikzpicture}[scale=0.78]
+        \def\bw{0.6}
+        \draw[gamgrey, -{Stealth[length=4pt]}] (-0.2,0) -- (5.0,0);
+        \draw[gamgrey, -{Stealth[length=4pt]}] (-0.2,0) -- (-0.2,2.3) node[above, font=\tiny] {$p$};
+        \fill[gamblue]   (0.2,0) rectangle ++(\bw,2.0);
+        \fill[gamaccent] (1.4,0) rectangle ++(\bw,1.6);
+        \fill[gamgrey]   (2.6,0) rectangle ++(\bw,0.28);
+        \fill[gamgrey]   (3.8,0) rectangle ++(\bw,0.12);
+        \node[font=\tiny, below] at (0.5,0)  {$t$ \;0.50};
+        \node[font=\tiny, below] at (1.7,0)  {$j_1$ 0.40};
+        \node[font=\tiny, below] at (2.9,0)  {$j_2$ 0.07};
+        \node[font=\tiny, below] at (4.1,0)  {$j_3$ 0.03};
+        \draw[dashed, gamblue, thick] (0.1,1.4) -- (4.6,1.4);
+        \node[font=\tiny, gamblue, above] at (3.4,1.42) {$p_t-\dlt = 0.35$};
+        \node[font=\tiny, gamaccent] at (1.7,1.85) {kept};
+        \node[font=\tiny, gamgrey] at (2.9,0.55) {masked};
+        \node[font=\tiny, gamgrey] at (4.1,0.42) {masked};
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \scriptsize
+      With $\dlt = 0.15$: $j_1$ is only $0.10$ behind, so it is \emph{still a
+      threat} and stays in the loss. $j_2, j_3$ are $0.43$ and $0.47$ behind ---
+      beaten by more than $\dlt$, so they are dropped and contribute no gradient.
+      \vspace{0.2em}
+      \takeaway{The instruction changes from \emph{``beat everything by
+      everything''} to \emph{``beat everything by $\dlt$, then stop''}.
+      Reported: better accuracy, better calibration, $\approx 1.2\times$ faster.}
+      \vspace{0.2em}
+      \quiet{Three details a referee asks about: the test is on
+      \emph{probabilities}, not logits; the mask is \emph{detached}; it is
+      recomputed \emph{every step}, never cached.}
+    \end{column}
+  \end{columns}
+  \note{%
+    AS-Softmax, published in 2023, is the method I set out to extend. Its rule
+    is one line: for a training example, if the correct class already beats a
+    competitor by at least delta in \emph{probability}, delete that competitor
+    from the loss for this step. What remains is ordinary cross-entropy
+    renormalised over the survivors. The picture: the true class is at 0.50,
+    delta is 0.15, so the threshold sits at 0.35. The first competitor at 0.40
+    is above the line --- still a genuine threat --- so it stays and keeps
+    producing gradient. The two small ones are far below and get dropped. Three
+    implementation points that a reviewer would ask about: the test is on
+    probabilities, not on raw logits; the mask is detached, so no gradient flows
+    through the threshold itself; and it is recomputed every single step, never
+    cached. The published paper reports better accuracy, better calibration and
+    about a 1.2 times speed-up.%
+  }
+\end{frame}
+
+\begin{frame}{The gap in AS-Softmax --- and my hypothesis}
+  \small
+  \begin{alertblock}{$\dlt$ is a single scalar}
+    The same number for ``sport vs.\ politics'' and ``sport vs.\ hardware''.
+    The same number for a clean example and a mislabelled one.
+    The same number at step $1$ and at step $10{,}000$.
+  \end{alertblock}
+  \vspace{-0.2em}
+  \[
+    \dlt \quad\longrightarrow\quad \mhit{\dltf}
+    \qquad
+    \tau = \frac{\text{current step}}{\text{total steps}} \in [0,1]
+  \]
+  \begin{columns}[T]
+    \begin{column}{0.53\textwidth}
+      \centering\scriptsize
+      \begin{tabular}{@{}p{1.6cm}p{4.4cm}@{}}
+        \toprule
+        axis & why it might need its own margin \\
+        \midrule
+        class-pair $(t,j)$ & confusable pairs need a bigger gap than obvious ones \\
+        sample $x$ & an ambiguous or mislabelled example is not like a clean one \\
+        time $\tau$ & early training is noisy; start loose, tighten later \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \centering\scriptsize
+      \begin{tabular}{@{}l>{\raggedright\arraybackslash}p{4.0cm}@{}}
+        \toprule
+        & hypothesis \\
+        \midrule
+        \textbf{H0} & AS-Softmax beats plain cross-entropy \quiet{(assumed, never tested)} \\
+        \textbf{H1} & class-pair structure helps \\
+        \textbf{H2} & per-sample structure helps \\
+        \textbf{H3} & the axes compose \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+  \end{columns}
+  \vspace{0.3em}
+  \takeaway{\textbf{Success criterion, fixed before running anything:}
+  $\geq +0.3\,\%$ accuracy over AS-Softmax, averaged over seeds. Writing it down
+  in advance is what stops you moving the goalposts afterwards.}
+  \note{%
+    Here is the gap I went after. Delta is one scalar. It is the same number for
+    a genuinely confusable pair of classes and for two classes that are nothing
+    alike; the same for a clean example and a mislabelled one; the same at the
+    first step and the last. That is a strong assumption and nobody had tested
+    it. My proposal is to replace the scalar by a function of three arguments:
+    the class pair, the sample, and tau --- normalised training progress between
+    zero and one. That gives three hypotheses, H1 to H3. Note H0 at the top: the
+    assumption that the method I am extending actually beats plain
+    cross-entropy in the first place. I wrote it down as an assumption, not as
+    something to test. That turns out to be the crux of the whole project.
+    Finally, note the success criterion --- plus 0.3 percent over AS-Softmax,
+    averaged over seeds --- fixed in advance, before any experiment ran, so I
+    could not move the goalposts afterwards.%
+  }
+\end{frame}
+
+% ===========================================================================
+\section{Methodology}
+% ===========================================================================
+
+\begin{frame}{GAM-Softmax: the general form}
+  \small
+  \[
+    \keep(x) \;=\; \{t\} \cup \bigl\{\, j \neq t \;:\; p_t - p_j < \dltf \,\bigr\},
+    \qquad
+    L \;=\; -\log\frac{e^{z_t}}{\displaystyle\sum_{k\in\keep(x)} e^{z_k}}
+  \]
+  Same loss as before --- the \emph{only} change is that the threshold is now a
+  function rather than a constant.
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{block}{Reduction property (unit-tested)}
+        If $\dltf \equiv \dlt$ is constant, then $\keep$ is \emph{exactly}
+        AS-Softmax's kept set, so $L \equiv L_{\mathrm{AS}}$ --- not
+        approximately, identically.
+      \end{block}
+      \vspace{-0.2em}
+      \begin{block}{Two familiar losses fall out}
+        $\dlt \geq 1 \Rightarrow$ nothing is ever masked (since
+        $p_t - p_j \leq 1$) $\Rightarrow$ \textbf{plain cross-entropy}.\\
+        $\dlt$ constant $\Rightarrow$ \textbf{AS-Softmax}.
+      \end{block}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \takeaway{This matters for honesty, not elegance: because the general form
+      \emph{contains} the baseline, any difference in the results is
+      attributable to the margin function alone --- not to a different loss,
+      a different optimiser, or a different bug.}
+      \vspace{0.3em}
+      \quiet{\scriptsize Enforced by a test that asserts equality of the two
+      losses to floating-point tolerance. 70 unit tests, $\approx 3$\,s.}
+    \end{column}
+  \end{columns}
+  \note{%
+    The generalisation is deliberately minimal. Same masking rule, same
+    renormalised loss --- the single change is that the threshold on the right
+    of the inequality is now a function of the class pair, the sample and the
+    time, instead of a constant. Two consequences worth stating. If the function
+    is constant, the kept set is exactly AS-Softmax's kept set and the losses are
+    identical --- I assert that with a unit test, so it is checked on every
+    commit. And if delta is at least one, nothing can ever be masked, because a
+    difference of two probabilities can never exceed one --- so you recover plain
+    cross-entropy. Both baselines are special cases of my formulation. That
+    matters for scientific honesty rather than elegance: because the general
+    form contains the baseline exactly, any difference in the numbers has to
+    come from the margin function itself.%
+  }
+\end{frame}
+
+\begin{frame}{M3 --- the class-pair axis}
+  \small
+  \[
+    \dlt_{t,j} \;=\; \dlt_{\min} \;+\; \bigl(\dlt_{\max}(\tau) - \dlt_{\min}\bigr)\cdot
+    \sigma\!\left(\frac{u_t \cdot v_j}{\sqrt{k}}\right),
+    \qquad u, v \in \R^{n\times k},\ \ k = 8
+  \]
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \textbf{Reading the formula}
+      \begin{itemize}\setlength\itemsep{0.2em}
+        \item every class $c$ gets two learnable vectors $u_c, v_c$ of length
+              $k=8$; their inner product scores the \emph{ordered} pair $(t,j)$
+        \item $\sigma$ (the logistic sigmoid) squashes that score into $(0,1)$,
+              so $\dlt_{t,j}$ can never leave $[\dlt_{\min}, \dlt_{\max}]$
+        \item $\dlt_{\max}(\tau)$ is the \emph{time} axis: a warm-up schedule
+        \item dividing by $\sqrt{k}$ keeps the pre-sigmoid scale $O(1)$
+              --- the same variance argument as in attention
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \begin{block}{Why low-rank, not a full table?}
+        A free margin per ordered pair is $n(n-1) = 380$ unconstrained numbers
+        for $n=20$, with no sharing between classes.\\[0.3em]
+        The low-rank form uses $2nk = 320$ and \emph{forces} classes to share
+        structure --- which is the actual hypothesis: that pair difficulty is
+        low-dimensional.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \note{%
+    The first axis. Each class gets two short learnable vectors, u and v, of
+    length eight. The margin for the ordered pair --- true class t against
+    competitor j --- is the inner product of u-t and v-j, pushed through a
+    sigmoid so it is bounded, and then stretched between a floor and a
+    time-varying ceiling. The square-root-of-k divisor is the same variance
+    normalisation used in attention: it stops the inner product from saturating
+    the sigmoid at initialisation. Why low-rank rather than a free table? For
+    twenty classes a free table is 380 unconstrained numbers with no sharing at
+    all, and it would just overfit. The factored form is 320 parameters that
+    force classes to share structure --- and that sharing \emph{is} the
+    hypothesis: that how confusable a pair is, is a low-dimensional property.%
+  }
+\end{frame}
+
+\begin{frame}{M4 --- the sample axis}
+  \small
+  \textbf{Step 1 --- how suspicious is this example, relative to its batch?}
+  \[
+    s_i \;=\; \sigma\!\left(\frac{\bar{p}_t - p_{t,i}}{\operatorname{std}(p_t)\cdot\text{temp}}\right)
+    \in (0,1),
+    \qquad s_i > 0.5 \iff \text{less confident than its peers}
+  \]
+  \textbf{Step 2 --- move the margin by that amount}
+  \[
+    \dlt_i(\tau) \;=\; \operatorname{clamp}\Bigl(\underbrace{\dlt_{\text{base}}(\tau)}_{\text{time axis}}
+    \;-\; \beta(\tau)\,\bigl(2 s_i - 1\bigr),\ \ \dlt_{\text{floor}},\ \dlt_{\text{ceil}}\Bigr)
+  \]
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{itemize}\setlength\itemsep{0.2em}
+        \item suspicious ($s_i\!\to\!1$) $\Rightarrow$ $\dlt$ \emph{down}
+              $\Rightarrow$ more classes masked $\Rightarrow$ less gradient
+        \item confident ($s_i\!\to\!0$) $\Rightarrow$ $\dlt$ \emph{up}, but
+              capped at AS-Softmax's own $\dlt$ --- the axis is \alert{one-sided},
+              so any difference comes purely from what we do to suspicious samples
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \begin{block}{Two deliberate design choices}
+        $(2s_i-1)$ averages to $\approx 0$ over a batch, so this varies $\dlt$
+        \emph{across} samples without changing the overall masking level ---
+        that stays the time axis's job, keeping the axes separable.\\[0.3em]
+        $\beta(\tau)=0$ for the first 30\,\% of training: early on $p_t$ is
+        near-random and carries no signal about which labels are wrong.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \note{%
+    The second axis, and this is the one that worked. Two steps. First, score
+    how suspicious each example is, using only information the model already
+    computed: take the probability it currently assigns to that example's
+    training label, compare it to the batch mean, divide by the batch standard
+    deviation, and squash with a sigmoid. Above one half means ``this example is
+    less confident than its peers'' --- that is, suspicious. Second, shift the
+    margin down by that amount. Suspicious examples get a lower margin, so more
+    of their competitors get masked, so they contribute less gradient. Two
+    design choices I would defend to a referee. The correction is mean-centred,
+    so it redistributes the margin across samples without changing the average
+    masking level --- that keeps this axis independent of the time axis, which
+    matters for the ablation. And beta is zero for the first thirty percent of
+    training, because early on the model's confidence is near-random and tells
+    you nothing about which labels are wrong.%
+  }
+\end{frame}
+
+\begin{frame}{The idea worth keeping: let $\dlt$ go \emph{negative}}
+  \small
+  Nothing in the mathematics requires a margin to be positive. Since
+  $p_t - p_j \in [-1, 1]$, the value $\dlt = -0.85$ is a perfectly legal
+  threshold. It reads:
+  \begin{center}
+    \emph{``drop class $j$ even if it is currently beating the training label by up to $0.85$.''}
+  \end{center}
+  \begin{columns}[T]
+    \begin{column}{0.49\textwidth}
+      \textbf{On a mislabelled example}
+      \begin{itemize}\setlength\itemsep{0.15em}
+        \item the model keeps $p_t$ low (the label is wrong)
+        \item so with $\dlt > 0$, \emph{no} competitor ever clears the bar
+        \item nothing is masked $\Rightarrow$ full cross-entropy $\Rightarrow$
+              pushed to fit the wrong label forever
+        \item \alert{that is exactly how a network memorises noise}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      \textbf{With $\dlt < 0$, the algebra ends it}
+      \[ \keep(x) = \{t\} \ \Rightarrow\ p_t^{\text{renorm}} = \frac{e^{z_t}}{e^{z_t}} = 1 \]
+      \[ \Rightarrow\ L = -\log 1 = 0 \ \Rightarrow\ \nabla L = 0 \]
+      The suspicious sample \emph{removes itself} from training --- no threshold
+      rule, no sample-selection heuristic.
+    \end{column}
+  \end{columns}
+  \begin{alertblock}{The reframing}
+    The noisy-label literature's ``small-loss trick'' --- drop the
+    high-loss examples --- is exactly the special case $\dlt < 0$ of a
+    \emph{margin}. No second network, no auxiliary loss, no selection
+    schedule: one line of configuration.
+  \end{alertblock}
+  \note{%
+    This is the slide I would keep if I could keep only one. Nothing in the maths
+    says a margin has to be positive. The quantity being thresholded is a
+    difference of two probabilities, so it lives between minus one and plus one,
+    and minus 0.85 is a legal threshold. It means: drop this competitor even if
+    it is currently \emph{ahead} of the training label. Now follow a mislabelled
+    example. Because the label is wrong, the model keeps assigning it low
+    probability. So under a positive margin no competitor ever clears the bar,
+    nothing gets masked, and the example receives full cross-entropy pressure
+    forever --- that is the memorisation mechanism, precisely. Under a negative
+    margin, every competitor is masked, the kept set is the single true class,
+    the renormalised probability is e-to-the-z over e-to-the-z which is exactly
+    one, the log of one is zero, and the gradient is zero. The example removes
+    itself. And that gives the reframing in the box: dropping high-loss samples
+    --- a standard trick in the noisy-label literature that usually needs a
+    second network or a selection schedule --- is just a margin with a negative
+    delta. One config line.%
+  }
+\end{frame}
+
+% ===========================================================================
+\section{Experimentation}
+% ===========================================================================
+
+\begin{frame}{The setup}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \textbf{Constraint that shaped everything}\\
+      One \textbf{RTX 3050 laptop, 6\,GB} (the plan assumed a 3090/4090).
+      One 20-Newsgroups run $\approx 25$ min $\Rightarrow$ a properly seeded
+      sweep is a day of wall clock.
+      \vspace{0.5em}
+
+      \textbf{Testbed}
+      \begin{itemize}\setlength\itemsep{0.1em}
+        \item 20 Newsgroups, 20 classes, headers/footers/quotes \emph{stripped}
+              --- otherwise BERT reaches $\approx99\,\%$ from metadata and no
+              method can separate from another
+        \item BERT-base, 4 epochs, batch 16, lr $2\!\times\!10^{-5}$, seq len 128
+        \item 6 configs, \textbf{identical} except the \texttt{loss:} block; 2 seeds (42, 43)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{block}{Label noise --- and why it is a \emph{paired} comparison}
+        \textbf{40\,\% symmetric label noise} on the training set; validation
+        labels stay clean.\\[0.3em]
+        The noise seed is fixed and \emph{decoupled} from the run seed, so every
+        method sees the \emph{identical} corrupted labels. Methods are compared
+        on the same corrupted dataset, not on statistically similar ones.
+      \end{block}
+      \takeaway{\textbf{One config file = one experiment = one row of the results
+      table.} 9 loss functions, 70 unit tests running in $\approx3$\,s. The null
+      result is not a code failure.}
+    \end{column}
+  \end{columns}
+  \note{%
+    The hardware constraint is real and it shaped every choice: a six-gigabyte
+    laptop GPU, where one run of this dataset takes about twenty-five minutes,
+    so a properly seeded comparison is a full day. The testbed is 20 Newsgroups
+    with headers, footers and quotes stripped --- without stripping, BERT scores
+    about ninety-nine percent by reading email metadata and every method ties, so
+    the experiment would measure nothing. Then the key protocol point on the
+    right: I corrupt forty percent of the training labels, at random, to a
+    different class, while validation labels stay clean. The noise seed is fixed
+    and separate from the run seed, which means every method sees the exact same
+    corrupted labels. So this is a paired comparison --- the methods differ, the
+    data does not. Finally the engineering discipline: one config file is one
+    experiment is one row of the results table, and seventy unit tests pass in
+    about three seconds. When I show you a null result, it is not a bug.%
+  }
+\end{frame}
+
+\begin{frame}{What I measure --- and the arithmetic behind it}
+  \small
+  Accuracy alone had been flat in every earlier experiment, so E1 measures the
+  \emph{mechanism} directly.
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{itemize}\setlength\itemsep{0.25em}
+        \item \textbf{peak} and \textbf{final} validation accuracy, and the
+              \textbf{decay} between them --- the overfitting trajectory
+        \item \textbf{memorisation rate:} of the training examples whose labels
+              were \emph{corrupted}, the fraction the model now predicts
+              \emph{as their corrupted label}
+        \item \textbf{recovery rate:} same examples, fraction predicted as their
+              \emph{true} label despite being trained on a wrong one
+        \item \textbf{masked ratio}, and 15-bin \textbf{ECE} (calibration)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \begin{block}{The no-memorisation floor}
+        With 40\,\% noise, where a flip never returns the original label, a model
+        that learned the \emph{true} function and memorised \emph{nothing}
+        scores exactly
+        \[ 0.6 \times 100\,\% + 0.4 \times 0\,\% = \mhit{60.0\,\%} \]
+        on the labels it was given.\\[0.3em]
+        \textbf{Everything above 60 is memorised noise} --- a quantity, not an
+        impression.
+      \end{block}
+    \end{column}
+  \end{columns}
+  \note{%
+    Six weeks of reading only accuracy taught me nothing, because accuracy was
+    flat everywhere. So the final experiment measures the mechanism. The central
+    quantity is the memorisation rate: I keep a record of exactly which training
+    examples had their labels corrupted, and at the end I ask what fraction of
+    those the model now predicts as the wrong label it was trained on. That is
+    memorisation measured directly, not inferred from an accuracy curve. And the
+    box on the right is the arithmetic that makes it interpretable. Sixty percent
+    of the training labels are still correct; forty percent were flipped, and a
+    flip never returns the original label. So a model that perfectly learned the
+    true function and memorised nothing would score exactly sixty percent
+    against the labels it was handed. Everything above sixty is memorised noise.
+    That gives a principled zero point.%
+  }
+\end{frame}
+
+\begin{frame}{Every experiment, in order}
+  \scriptsize
+  \begin{table}\centering
+  \begin{tabular}{@{}clp{2.5cm}p{5.0cm}@{}}
+    \toprule
+    \# & testbed & question & result \\
+    \midrule
+    1 & SST-5, clean, 3 seeds & baselines sane? & softmax 51.1\,\%, AS-Softmax \textbf{52.2\,\%} $\Rightarrow$ AS $>$ CE by $+1.1$ \checkmark \\
+    2 & SST-5, clean, 3 seeds & H1, fixed margin & M3 52.10 vs AS 52.17 $=$ \hit{$-0.06$} \\
+    3 & SST-5, clean, 3 seeds & H1, learnable margin & M3$'$ 51.83 vs AS 52.17 $=$ \hit{$-0.33$} \\
+    4 & SST-5, tuning screen & is H1 under-tuned? & higher margin LR hurt \emph{monotonically} ($52.5 \to 50.6 \to 50.1$) $\Rightarrow$ not a tuning artefact \\
+    5 & 20NG, clean, 1 seed & testbed with headroom? & GAM 71.18 $>$ AS 70.59, but plain CE 71.46 wins $\Rightarrow$ \hit{AS $<$ CE} \\
+    6 & SST-5, noise $\{0,.2,.4\}$ & does a hard regime rescue it? & all gaps inside $\pm2\,\%$ seed scatter $\Rightarrow$ inconclusive \\
+    \midrule
+    \textbf{7} & \textbf{20NG, 40\,\% noise, 2 seeds} & \textbf{the decisive test} & \textbf{next section} \\
+    \bottomrule
+  \end{tabular}
+  \end{table}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \takeaway{\textbf{H0 kept failing.} AS-Softmax beat cross-entropy on
+      SST-5 ($+1.1$), lost on 20NG ($-0.9$), and was a wash under noise. Three
+      of four setups gave the method I extend \emph{no edge} over the simplest
+      possible baseline.}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \takeaway{\textbf{The one repeatable GAM signal was stability, not
+      accuracy}: lowest seed-to-seed variance at every noise level, and still
+      \emph{improving} at the last epoch where the baselines had peaked and
+      turned over.}
+    \end{column}
+  \end{columns}
+  \note{%
+    The honest audit trail --- every experiment, in the order I ran them.
+    Row one: baselines reproduce, AS-Softmax beats plain softmax by about one
+    point on SST-5, so the engine is trustworthy. Rows two and three: the
+    class-pair hypothesis, tested twice, comes out slightly negative both times.
+    Row four is the one I would want a referee to see --- I checked whether the
+    flat result was just bad tuning, and raising the margin learning rate made
+    it monotonically \emph{worse}, so it is a real effect, not under-tuning.
+    Row five moves to a harder dataset and finds the thing that eventually
+    decided the project: plain cross-entropy wins, and AS-Softmax --- the method
+    I am extending --- loses to it. Row six, adding label noise, is
+    inconclusive. Two patterns repeat. First, H0 --- my unexamined assumption ---
+    kept failing. Second, the only repeatable signal from my method was
+    stability rather than accuracy, and that is what the final experiment was
+    designed to confirm or kill.%
+  }
+\end{frame}
+
+% ===========================================================================
+\section{Results and Demonstration of Final Result}
+% ===========================================================================
+
+\begin{frame}{E1 --- the decisive experiment}
+  \framesubtitle{20 Newsgroups, 40\,\% symmetric label noise, BERT-base, 2 seeds (42, 43)}
+  \scriptsize
+  \begin{table}\centering
+  \begin{tabular}{@{}lrrrrrr@{}}
+    \toprule
+    method & peak val \% & final val \% & decay & \multicolumn{1}{c}{\shortstack{memorised noise\\(pts over floor)}} & mem @final \% & recovers true \% \\
+    \midrule
+    softmax (plain CE)        & 67.59 {\tiny$\pm$0.71} & 64.19 {\tiny$\pm$0.92} & $-3.40$ & $+11.5$ & 33.7 {\tiny$\pm$0.4} & 41.2 \\
+    as\_softmax (scalar $\dlt$) & 67.56 {\tiny$\pm$0.34} & 64.72 {\tiny$\pm$0.20} & $-2.84$ & \hit{$+13.6$} & \hit{39.9 {\tiny$\pm$1.8}} & 44.1 \\
+    gam\_m3 (class-pair)      & 67.68 {\tiny$\pm$0.81} & 65.21 {\tiny$\pm$1.42} & $-2.47$ & $+11.4$ & 35.2 {\tiny$\pm$1.7} & 45.9 \\
+    \textbf{gam\_m4 (sample)} & \textbf{68.09} {\tiny$\pm$0.05} & \good{66.96} {\tiny$\pm$0.42} & \good{$-1.13$} & \good{$+3.1$} & \good{19.3} {\tiny$\pm$0.7} & \good{57.3} \\
+    \bottomrule
+  \end{tabular}
+  \end{table}
+  \vspace{-0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.49\textwidth}
+      \begin{block}{Read the accuracy column first --- it is flat}
+        Peak accuracy spans $67.56$ to $68.09$: half a point across all four
+        methods. Plain cross-entropy alone spans \textbf{1.0 point} between its
+        two seeds. \textbf{The accuracy column contains no result.}
+      \end{block}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      \begin{alertblock}{Now read the memorisation column}
+        The same two seeds of plain cross-entropy span only \textbf{0.6 points}
+        of memorisation. So a \textbf{14-point} gap is $\approx20\times$ the
+        measurement's own noise --- it cannot be a lucky seed.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+  \note{%
+    Here is the whole experiment on one slide. Read the accuracy column first,
+    because the discipline matters more than the result: peak accuracy runs from
+    67.6 to 68.1, about half a point across four quite different objectives.
+    Meanwhile plain cross-entropy on its own spans a full point between its two
+    random seeds. So the accuracy column contains no result --- every difference
+    in it is smaller than the noise of the measurement. Now the memorisation
+    column. The same two seeds of cross-entropy span only six tenths of a point
+    there, so that measurement is roughly twenty times quieter. And the gap
+    between the bottom row and the rest is fourteen points. That is about twenty
+    times the noise floor of the measurement, which is why I am willing to make
+    a claim about that column and not about the accuracy column. Choosing which
+    metric can support a claim is most of this experiment.%
+  }
+\end{frame}
+
+\begin{frame}{The output, in two pictures}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \centering
+      \includegraphics[width=0.93\linewidth]{fig2_memorization_n0.4.png}
+      \vspace{-0.3em}
+      {\scriptsize Lower is better. All methods rise --- \alert{M4's curve
+      flattens} while the rest accelerate.}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \centering
+      \includegraphics[width=0.93\linewidth]{fig1_accuracy_n0.4.png}
+      \vspace{-0.3em}
+      {\scriptsize Everything peaks at epoch 1 and decays. \alert{M4 decays
+      least} --- $-1.13$ points against cross-entropy's $-3.40$.}
+    \end{column}
+  \end{columns}
+  \vspace{0.2em}
+  \takeaway{Same runs, two views. Left: by the last epoch, AS-Softmax has
+  memorised \emph{more} corrupted labels than plain cross-entropy (39.9\,\% vs
+  33.7\,\%) --- the opposite of what the margin-loss story predicts. Right: the
+  four curves are almost on top of each other until the overfitting phase
+  separates them.}
+  \note{%
+    The two pictures are the same four runs, viewed two ways. On the left,
+    memorisation of corrupted labels over the four epochs. Everything climbs ---
+    all of these models memorise --- but the red curve, the sample-axis variant,
+    flattens out around fifteen to nineteen percent while the others accelerate
+    past thirty-five. Note the blue curve, AS-Softmax: it ends \emph{highest},
+    above plain cross-entropy. I will come back to that, because it contradicts
+    the standard justification for these losses. On the right, validation
+    accuracy on clean labels. Everything peaks at epoch one and then decays as
+    the models start fitting the noise. The red curve decays least --- about one
+    point lost against cross-entropy's three and a half. Same mechanism, two
+    views: less memorisation, less decay.%
+  }
+\end{frame}
+
+\begin{frame}{What the numbers actually say}
+  \small
+  \begin{columns}[T]
+    \begin{column}{0.49\textwidth}
+      \textbf{1. The precondition failed.}\\
+      AS $-$ CE $= -0.03$ points over two seeds ($-0.29$ and $+0.23$: a coin
+      flip). \emph{Fourth testbed in a row.} The method I set out to generalise
+      has, in my hands, no advantage over plain cross-entropy to generalise.
+      \vspace{0.5em}
+
+      \textbf{2. AS-Softmax memorises \emph{more} than plain CE.}\\
+      $+13.6$ vs $+11.5$ points over the floor, on \emph{both} seeds
+      ($+7.8$, $+4.6$). This contradicts the standard story --- and my own
+      reason for moving to noisy labels.\\[0.3em]
+      \quiet{Mechanism: masking retires the \emph{easy} negatives first --- what
+      a correctly-labelled example runs out of early. So an ever-larger share of
+      the gradient goes to the still-confusable examples, which are exactly the
+      mislabelled ones. \textbf{Scalar masking concentrates effort onto the
+      noise.}}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      \textbf{3. The sample axis does what it was designed to do.}
+      \vspace{0.2em}
+      \begin{table}\centering\scriptsize
+      \begin{tabular}{@{}lrrrr@{}}
+        \toprule
+        (2-seed means) & CE & AS & M3 & \textbf{M4} \\
+        \midrule
+        memorised noise (pts) & 11.5 & 13.6 & 11.4 & \good{3.1} \\
+        recovers true label & 41.2 & 44.1 & 45.9 & \good{57.3} \\
+        peak-to-final decay & 3.40 & 2.84 & 2.47 & \good{1.13} \\
+        non-target slots masked & 0\,\% & 56\,\% & 49\,\% & \good{95\,\%} \\
+        \bottomrule
+      \end{tabular}
+      \end{table}
+      Four independent measurements moving together in the predicted direction,
+      driven by a mechanism I can point at in the code: $\dlt$ goes negative
+      $\to$ the suspect sample's competitors are all masked $\to$ its loss
+      contribution vanishes.
+    \end{column}
+  \end{columns}
+  \note{%
+    Three readings. First, the precondition. Over two seeds AS-Softmax beats
+    plain cross-entropy by minus 0.03 points --- minus 0.29 on one seed, plus
+    0.23 on the other, which is a coin flip. That is the fourth testbed in a row
+    where the method I set out to generalise has no reliable edge over the
+    simplest possible baseline. You cannot generalise an advantage that is not
+    there. Second, and this one surprised me: AS-Softmax memorises corrupted
+    labels \emph{more} than plain cross-entropy, on both seeds. Every
+    margin-loss paper, and my own written rationale for moving to noisy labels,
+    argues that masking should \emph{prevent} memorisation. Measured directly,
+    the opposite happens, and I think I know why --- masking retires the easy
+    competitors first, and easy competitors are what a correctly labelled
+    example runs out of early, so as training goes on an ever-larger share of
+    the gradient budget is spent on the hard examples, which are precisely the
+    mislabelled ones. Scalar masking concentrates effort onto the noise. Third,
+    the table: four independent measurements all move together for the
+    sample-axis variant, and I can point at the line of code that causes it.%
+  }
+\end{frame}
+
+\begin{frame}{Verdict --- stated as it is}
+  \scriptsize
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{table}\centering
+      \begin{tabular}{@{}llp{2.6cm}@{}}
+        \toprule
+        & hypothesis & verdict \\
+        \midrule
+        \textbf{H0} & AS $>$ plain CE & \hit{NOT SUPPORTED} --- 3 of 4 testbeds show no advantage \\
+        \textbf{H1} & class-pair helps & \hit{NOT SUPPORTED} --- $+0.12$ over AS, inside a 1.0-pt noise band \\
+        \textbf{H2} & sample axis helps & \textbf{SPLIT} --- peak accuracy not established; memorisation cut $\approx4\times$ \\
+        \textbf{H3} & the axes compose & UNTESTED --- implemented, run cut for compute \\
+        \bottomrule
+      \end{tabular}
+      \end{table}
+      \vspace{0.2em}
+      \begin{alertblock}{The honest limit}
+        M4's mean peak is $+0.51$ over CE --- which would clear my $+0.3$
+        criterion. \textbf{I do not claim it.} Per seed it is $-0.03$ and
+        $+1.04$: the entire mean comes from one seed where cross-entropy had a
+        bad run. What \emph{does} replicate is the \emph{final-epoch} gain:
+        $+3.72$ and $+1.83$, both positive, mean $+2.77$.
+      \end{alertblock}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \begin{table}\centering
+      \begin{tabular}{@{}p{2.4cm}p{3.4cm}@{}}
+        \toprule
+        finding & confidence \\
+        \midrule
+        M4 cuts memorisation $\approx4\times$ ($-14.4$ pts) & \good{Confirmed} \quiet{(both seeds; $\approx20\times$ the metric's spread)} \\
+        AS-Softmax memorises \emph{more} than CE & \good{Confirmed} \quiet{(both seeds)} \\
+        M4 gains at the final epoch ($+2.77$) & \good{Confirmed (direction)} \quiet{(magnitude varies $2\times$)} \\
+        H0 and H1 null & \good{Confirmed} \quiet{(4 testbeds)} \\
+        M4 gains at \emph{peak} accuracy & \hit{Not established} \quiet{(one seed)} \\
+        M4 is more seed-stable & \quiet{Suggestive only ($n=2$)} \\
+        Calibration & \quiet{No claim} \\
+        \bottomrule
+      \end{tabular}
+      \end{table}
+    \end{column}
+  \end{columns}
+  \note{%
+    The verdict table, left. My assumed precondition: not supported. The
+    class-pair hypothesis, which was the original core of the project: not
+    supported, and I showed earlier it is not a tuning artefact. The sample axis:
+    split --- it fails on the metric I pre-registered and succeeds on the
+    mechanism metrics. The third hypothesis was implemented and unit-tested but I
+    could not afford the compute to run it, and I would rather say that than
+    quietly omit it. Then the box, which is the part I want to be judged on.
+    The sample-axis variant's mean peak accuracy is plus 0.51 over cross-entropy,
+    which would clear the plus 0.3 criterion I set in advance. I do not claim it.
+    Per seed the gap is minus 0.03 and plus 1.04 --- the entire mean comes from
+    one seed where cross-entropy happened to have a bad run, and one seed of two
+    is not a result. What does replicate is the end-of-training gain, positive on
+    both seeds. On the right, every finding graded separately, because they are
+    not equally solid.%
+  }
+\end{frame}
+
+\begin{frame}{Conclusion}
+  \small
+  \begin{block}{In one sentence}
+    Generalising AS-Softmax's scalar margin along the \textbf{class-pair} axis
+    produced no measurable benefit on any of four testbeds; generalising it
+    along the \textbf{sample} axis --- by letting the margin go
+    \emph{negative}, which makes small-loss sample rejection a special case of a
+    margin --- did not reliably improve peak accuracy either, but \textbf{cut
+    memorisation of corrupted labels roughly fourfold} and left the final-epoch
+    model \textbf{2.8 points} better than cross-entropy under 40\,\% label noise.
+  \end{block}
+  \begin{columns}[T]
+    \begin{column}{0.485\textwidth}
+      \scriptsize
+      \textbf{What I would claim in writing}
+      \begin{itemize}\setlength\itemsep{0.15em}
+        \item the class-pair negative result, replicated over four testbeds and
+              shown not to be a tuning artefact
+        \item that AS-Softmax \emph{increases} memorisation under label noise,
+              contradicting the standard rationale for margin losses in that
+              regime --- measured directly, not inferred from accuracy
+        \item the negative-margin reframing (small-loss rejection \emph{is} a
+              margin), with evidence that it works mechanically
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.485\textwidth}
+      \scriptsize
+      \textbf{What I would \emph{not} claim}
+      \begin{itemize}\setlength\itemsep{0.15em}
+        \item that GAM-Softmax improves accuracy. It does not.
+        \item any state-of-the-art noisy-label claim --- I never ran the real
+              baselines (co-teaching, DivideMix, GCE). M4 beats \emph{cross-entropy
+              and AS-Softmax at the final epoch}; that is a much weaker statement,
+              and it is the only one the data supports.
+        \item any calibration claim \quiet{(the ECE gap is \emph{under}confidence;
+              largely fixable by temperature scaling, which I did not run)}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \note{%
+    The one-sentence conclusion is in the box, and it is written so that nothing
+    in it exceeds the evidence. Then the two lists. On the left, what I would
+    defend in writing: the negative result on the class-pair axis, replicated
+    across four testbeds and shown not to be a tuning artefact; the finding that
+    AS-Softmax increases memorisation, which contradicts the standard rationale
+    and which I measured directly rather than inferred; and the negative-margin
+    reframing as a modelling contribution. On the right, what I refuse to claim
+    --- above all that the method improves accuracy, because it does not.%
+  }
+\end{frame}
+
+\begin{frame}{Limits, and what a follow-up should do differently}
+  \scriptsize
+  \begin{columns}[T]
+    \begin{column}{0.485\textwidth}
+      \textbf{What would have to be true for this to be wrong}
+      \begin{itemize}\setlength\itemsep{0.2em}
+        \item 2 seeds, 1 dataset, 1 noise level, 1 architecture, 4 epochs.
+              \quiet{Two seeds is enough to kill a hypothesis and not enough to
+              establish a small effect --- which is exactly why the memorisation
+              gap is claimed and the accuracy gap is not.}
+        \item $\beta$ was never swept --- the cleanest evidence for a mechanism
+              is that the effect scales with its knob, and that is the run I
+              could not afford
+        \item symmetric noise is the easy case; real noise is
+              instance-dependent, where ``the model disagrees with this label''
+              is a much weaker signal of corruption
+        \item weak baselines by design --- CE and AS-Softmax, not methods built
+              for noisy labels
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.485\textwidth}
+      \textbf{What a follow-up should do differently}
+      \begin{enumerate}\setlength\itemsep{0.2em}
+        \item \alert{validate H0 in week 1}, not week 8. One week reproducing
+              the baseline's published gain would have redirected the whole
+              project.
+        \item pick a regime where masking is \emph{forced} to matter --- 10k+
+              classes, or genuinely long-tailed data. Balanced text
+              classification with a strong pretrained encoder is close to the
+              worst case: plain CE is very hard to beat there.
+        \item instrument the mechanism from day 1. I read only accuracy for six
+              weeks; it was flat everywhere and told me nothing about \emph{why}.
+        \item keep the negative-margin framing, and test it against the real
+              noisy-label baselines. It is one config line away.
+      \end{enumerate}
+    \end{column}
+  \end{columns}
+  \note{%
+    The limits, stated before anyone has to ask. Two seeds, one dataset, one
+    noise level --- enough to kill a hypothesis, not enough to establish a small
+    effect, which is precisely the distinction I drew two slides ago. Beta was
+    never swept, and that is the honest hole: the cleanest evidence that a
+    mechanism is what you think it is, is that the effect scales with its knob,
+    and that is the run I could not afford. Symmetric noise is the easy case,
+    and the baselines are weak by design. On the right, the four things I would
+    do differently, and the first is the real lesson of the whole project: I
+    assumed the baseline's advantage instead of spending one week checking it,
+    and that assumption was the crux. Thank you --- happy to take questions.%
+  }
+\end{frame}
+
+% =========================================================== BACKUP
+\appendix
+
+\begin{frame}[plain]
+  \vfill\centering
+  {\color{gamgrey}\small BACKUP SLIDES}\\[0.6em]
+  {\color{gamblue}\Large\bfseries For questions}
+  \vfill
+  \note{Backup slides follow: per-seed numbers, the calibration caveat, and how to reproduce everything.}
+\end{frame}
+
+\begin{frame}{Backup --- head-to-head, reported per seed}
+  \small
+  A two-seed mean can hide the fact that one seed did all the work, so here is
+  every comparison split out.
+  \begin{table}\centering\small
+  \begin{tabular}{@{}lccc@{}}
+    \toprule
+    vs.\ plain CE & peak (s42 / s43) & final (s42 / s43) & memorisation (s42 / s43) \\
+    \midrule
+    as\_softmax $-$ CE & $-0.29$ / $+0.23$ & $+1.33$ / $-0.26$ & \hit{$+7.8$ / $+4.6$} \\
+    gam\_m3 $-$ CE     & $+0.16$ / $+0.01$ & $+0.67$ / $+1.38$ & $+0.6$ / $+2.4$ \\
+    gam\_m4 $-$ CE     & $-0.03$ / $\mathbf{+1.04}$ & \good{$+3.72$ / $+1.83$} & \good{$-14.6$ / $-14.2$} \\
+    \bottomrule
+  \end{tabular}
+  \end{table}
+  \takeaway{Read the M4 row across: the peak column disagrees with itself, the
+  final and memorisation columns agree on both seeds. That difference is the
+  entire basis for which claims I make and which I refuse to.}
+  \note{%
+    This is the table that decides what I am willing to say. Look at the bottom
+    row. The peak-accuracy column disagrees with itself --- minus 0.03 on one
+    seed, plus 1.04 on the other. The final-accuracy and memorisation columns
+    agree on both seeds, and the memorisation effect is fourteen points in both
+    cases. So I claim the second and third columns and refuse the first.%
+  }
+\end{frame}
+
+\begin{frame}{Backup --- the calibration caveat}
+  \small
+  The margin variants have far \emph{worse} ECE: $0.42$--$0.47$ against plain
+  cross-entropy's $0.19$. Read naively that is a defeat. It is not what is
+  happening.
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{itemize}\setlength\itemsep{0.2em}
+        \item M4's mean predicted confidence is $\approx 0.25$ while its
+              accuracy is $\approx 0.67$
+        \item so the model is systematically \alert{under}confident, not
+              overconfident
+        \item by construction: the margin objective \emph{stops pushing} $p_t$
+              upward once the gap is met, so the probabilities stay compressed
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \takeaway{Underconfidence is a benign failure mode compared with
+      cross-entropy's direction, and it is largely removable by temperature
+      scaling --- which I did not run. So: \textbf{no calibration claim in
+      either direction.}}
+    \end{column}
+  \end{columns}
+  \note{%
+    If someone asks about calibration: expected calibration error is much worse
+    for the margin variants, 0.42 to 0.47 against 0.19. But look at the
+    direction. Mean predicted confidence for the sample-axis variant is about
+    0.25 while its accuracy is about 0.67 --- so it is badly \emph{under}
+    confident, not overconfident, and that is exactly what the objective is
+    designed to do, because it stops pushing the true-class probability upward
+    once the margin is met. Underconfidence is the benign direction and it is
+    largely removable by temperature scaling, which I did not run. So I make no
+    calibration claim either way.%
+  }
+\end{frame}
+
+\begin{frame}[fragile]{Backup --- reproducing all of it}
+  \small
+  \begin{semiverbatim}\scriptsize
+conda activate gam
+
+python -m pytest tests/ -v                    \textcolor{gamgrey}{-- 70 tests, ~3 s}
+python experiments/final_experiment.py        \textcolor{gamgrey}{-- E1, resumable (~6 h)}
+python experiments/final_experiment.py --only-block 1
+  \end{semiverbatim}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{itemize}\setlength\itemsep{0.1em}
+        \item \texttt{FINAL\_REPORT.md} --- the full write-up
+        \item \texttt{HOW\_WE\_VARY\_DELTA.md} --- the method in plain language
+        \item \texttt{runs/final\_20ng/} --- per-run JSON with full epoch
+              histories, plus \texttt{summary.md}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{itemize}\setlength\itemsep{0.1em}
+        \item 9 losses in \texttt{gam\_softmax/losses/}
+        \item margins in \texttt{gam\_softmax/margins/}
+        \item one config = one experiment = one table row
+        \item run 2026-07-28/31, commit \texttt{b2ff750}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+  \note{%
+    Everything is reproducible from the repository: the test suite runs in three
+    seconds, and the final experiment is a single resumable command. Every
+    number in this talk traces back to a JSON record under runs slash
+    final-20ng, and the runs are stamped with the commit they came from.%
+  }
+\end{frame}

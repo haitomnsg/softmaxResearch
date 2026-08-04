@@ -33,8 +33,17 @@ Thumbs.db
 .idea/
 .vscode/
 
-# presentation build artefacts (the .pptx itself IS committed)
+# presentation build artefacts (the .pptx and the LaTeX PDFs ARE committed)
 presentation/node_modules/
 presentation/package*.json
 presentation/render/
 presentation/*.pdf
+
+# LaTeX intermediates
+presentation/latex/*.aux
+presentation/latex/*.log
+presentation/latex/*.nav
+presentation/latex/*.out
+presentation/latex/*.snm
+presentation/latex/*.toc
+presentation/latex/*.vrb
