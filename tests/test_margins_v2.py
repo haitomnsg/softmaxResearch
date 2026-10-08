@@ -86,6 +86,31 @@ def test_mixture_degenerate_constant_losses_do_not_crash():
     assert fit["k"] == 1
 
 
+def test_anchor_gate_rejects_a_high_mode_below_chance_loss():
+    """Clean data mid-training is bimodal too (fitted vs not-yet-fitted), but its high
+    mode sits below the chance-level loss log C. The gate must leave that alone."""
+    torch.manual_seed(0)
+    n = 400
+    m = _mix(n_train=n)                                   # C = 5 → chance loss = log 5 ≈ 1.61
+    m.ema_loss.copy_(torch.cat([torch.rand(200) * 0.05 + 0.02,       # fitted: ≈ 0.02–0.07
+                                torch.rand(200) * 0.4 + 0.6]))       # unfitted-clean: ≈ 0.6–1.0 < 1.61
+    m.seen.fill_(True)
+    m._refit()
+    assert m.last_fit["k"] == 2                            # bimodal ...
+    assert m.last_fit["hi_mean_loss"] < m.chance_loss      # ... but below chance
+    assert not bool(m.mix_active) and m.last_est_noise_rate == 0.0
+    # same shape of data shifted above chance → active, and the rate is the planted 0.5
+    m.ema_loss.copy_(torch.cat([torch.rand(200) * 0.05 + 0.02, torch.rand(200) * 0.4 + 2.5]))
+    m._refit()
+    assert bool(m.mix_active) and abs(m.last_est_noise_rate - 0.5) < 0.05
+    # the gate can be switched off (ablation)
+    m2 = _mix(n_train=n, anchor_gate=False)
+    m2.ema_loss.copy_(torch.cat([torch.rand(200) * 0.05 + 0.02, torch.rand(200) * 0.4 + 0.6]))
+    m2.seen.fill_(True)
+    m2._refit()
+    assert bool(m2.mix_active)
+
+
 # ----------------------------------------------------------------------------- state discipline
 
 def test_neutral_before_first_fit_recovers_as_softmax():

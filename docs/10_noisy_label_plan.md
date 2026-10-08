@@ -81,10 +81,18 @@ rejected fraction tracks the noise actually present. C′ changes **one thing**:
 ``δ_i = clamp(δ_base − β·(2·s_i − 1), −1, 0.15)``. Everything else (β = 1, ramp 0 → 30%, AS base δ = 0.15, 8 epochs,
 noisy-val selection, 5 seeds) is frozen at the Phase C recipe. Two variants, one file each:
 
-- **`m4v2` (`loss_mixture`)** — per-sample EMA of −log p_t over training, a 1- vs 2-component Gaussian mixture refit once per
-  epoch and chosen by BIC. One component → s_i = 0.5 for everyone (exactly AS-Softmax, nothing rejected). Two → s_i is the
-  posterior of the high-loss component, and the high component's weight is logged as `est_noise_rate`, a free, checkable
-  prediction. This is DivideMix's selection statistic expressed as a margin.
+- **`m4v2` (`loss_mixture`)** — per-sample EMA of −log p_t over training, a 1- vs 2-component Gaussian mixture on **log**
+  losses, refit every 100 steps and chosen by BIC, **active only if the high component's mean loss is ≥ log C** (the loss of a
+  uniform prediction: the model rates those labels below chance). Inactive → s_i = 0.5 for everyone (exactly AS-Softmax,
+  nothing rejected). Active → s_i is the posterior of the high-loss component, and the high component's weight is logged as
+  `est_noise_rate`, a free, checkable prediction. This is DivideMix's selection statistic expressed as a margin.
+  *Design iteration before launch (2026-10-08), from a diagnostic with ground truth on the training set (one CE epoch, 20NG;
+  no test accuracy involved): the first design fitted raw losses and gated on BIC alone. Raw-loss fits over-estimated the
+  rate (0.59 at a true 0.40, precision 0.67; log fits 0.39–0.40, precision 0.82–0.87, AUC 0.94–0.96). And on **clean** data
+  BIC still chose two components with weight 0.44–0.52, because unfitted clean samples form a second mode; since a rejected
+  sample is never fitted, that would lock in ~half the clean set. The two modes differ in position: mislabeled ≈ 3.5 ≥
+  log 20 = 3.0; unfitted-clean 1.5 → 0.77 and falling. Hence the chance-level anchor, which is not a tuned threshold. The same
+  diagnostic predicts the stateless control will flag 21–29% of clean samples, which is what P1 on `m4_absgap` measures.*
 - **`m4_absgap` (`abs_gap`)** — stateless control: s_i = σ((max_{j≠t} p_j − p_t) / temp). Suspicious iff some class currently
   beats the given label, so the rejected fraction falls on clean data and rises with noise by itself.
 
