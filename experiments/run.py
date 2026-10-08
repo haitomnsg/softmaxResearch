@@ -33,7 +33,12 @@ from gam_softmax.losses import (
     SparsemaxLoss,
 )
 from gam_softmax.data.probe import build_probe
-from gam_softmax.margins import ClassPairLowRankMargin, SampleConfidenceMargin
+from gam_softmax.margins import (
+    AbsoluteGapMargin,
+    ClassPairLowRankMargin,
+    LossMixtureMargin,
+    SampleConfidenceMargin,
+)
 from gam_softmax.models import TextClassifier
 from gam_softmax.schedules import ConstantSchedule, LinearSchedule
 from gam_softmax.training import Trainer
@@ -63,6 +68,8 @@ SCHEDULE_REGISTRY = {
 MARGIN_REGISTRY = {
     "classpair_lowrank": ClassPairLowRankMargin,
     "sample_confidence": SampleConfidenceMargin,
+    "loss_mixture": LossMixtureMargin,       # M4-v2: EMA loss + BIC-gated 2-GMM posterior
+    "abs_gap": AbsoluteGapMargin,            # M4 stateless control: another class beats the label
 }
 
 
@@ -72,14 +79,19 @@ def build_schedule(cfg: dict):
     return cls(**cfg)
 
 
-def build_margin(cfg: dict, n_classes: int):
+def build_margin(cfg: dict, n_classes: int, n_train: int | None = None):
     cfg = dict(cfg)
     cls = MARGIN_REGISTRY[cfg.pop("type")]
     schedule = build_schedule(cfg.pop("schedule"))
     # a nested `base:` block composes margins (e.g. sample axis over class-pair axis)
     base_cfg = cfg.pop("base", None)
     if base_cfg is not None:
-        cfg["base_margin"] = build_margin(base_cfg, n_classes)
+        cfg["base_margin"] = build_margin(base_cfg, n_classes, n_train)
+    # stateful per-sample margins size their buffers by the training set
+    if "n_train" in inspect.signature(cls.__init__).parameters:
+        if n_train is None:
+            raise ValueError(f"{cls.__name__} needs n_train (size of the training set)")
+        cfg["n_train"] = n_train
     return cls(n_classes=n_classes, schedule=schedule, **cfg)
 
 
@@ -116,16 +128,21 @@ def build_data(cfg: dict, tokenizer):
     raise ValueError(f"Unknown dataset: {name}")
 
 
-def build_loss(cfg: dict, n_classes: int, feature_dim: int) -> torch.nn.Module:
+def build_loss(cfg: dict, n_classes: int, feature_dim: int,
+               n_train: int | None = None) -> torch.nn.Module:
     loss_cfg = dict(cfg["loss"])
     cls = LOSS_REGISTRY[loss_cfg.pop("type")]
-    # small-loss's oracle setting: forget exactly the true noise rate of this run
+    # small-loss's oracle setting: forget exactly the true noise rate of this run,
+    # optionally scaled (`forget_rate_scale: 0.5` = half the oracle rate)
     if loss_cfg.get("forget_rate") == "noise_rate":
-        loss_cfg["forget_rate"] = float(cfg.get("dataset", {}).get("label_noise", 0.0))
+        scale = float(loss_cfg.pop("forget_rate_scale", 1.0))
+        loss_cfg["forget_rate"] = scale * float(cfg.get("dataset", {}).get("label_noise", 0.0))
+    else:
+        loss_cfg.pop("forget_rate_scale", None)
     # GAM-Softmax composes a margin_fn from a sub-config; build it first.
     if cls is GAMSoftmaxLoss:
         margin_cfg = loss_cfg.pop("margin")
-        margin_fn = build_margin(margin_cfg, n_classes=n_classes)
+        margin_fn = build_margin(margin_cfg, n_classes=n_classes, n_train=n_train)
         return cls(n_classes=n_classes, margin_fn=margin_fn, **loss_cfg)
     # pass feature_dim only to losses that declare it (e.g. AM-Softmax owns its own W)
     if "feature_dim" in inspect.signature(cls.__init__).parameters:
@@ -178,7 +195,8 @@ def main() -> None:
         dropout=cfg["model"].get("dropout", 0.1),
     )
     feature_dim = model.encoder.config.hidden_size
-    loss_fn = build_loss(cfg, n_classes=n_classes, feature_dim=feature_dim)
+    loss_fn = build_loss(cfg, n_classes=n_classes, feature_dim=feature_dim,
+                         n_train=len(data["train"].dataset))
 
     optim_cfg = cfg["training"]
     wd = optim_cfg.get("weight_decay", 0.01)
@@ -249,6 +267,9 @@ def main() -> None:
             "best_recover_rate": best.get("recover_rate"),
             "final_val_ece": state.history[-1].get("val_ece") if state.history else None,
             "final_mem_rate": state.history[-1].get("mem_rate") if state.history else None,
+            # self-calibrating margins' own estimate of the noise rate, last epoch
+            "final_est_noise_rate": state.history[-1].get("train_est_noise_rate") if state.history else None,
+            "final_masked_ratio": state.history[-1].get("train_masked_ratio") if state.history else None,
             "wall_time_s": round(time.time() - t_start, 1),
             "history": state.history,
         }

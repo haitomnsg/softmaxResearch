@@ -145,12 +145,34 @@ class SampleConfidenceMargin(MarginFunction):
         ramp = (step_frac - w) / (self.reject_ramp_end - w)
         return self.beta * min(1.0, max(0.0, ramp))
 
+    @torch.no_grad()
+    def _suspicion(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        step_frac: float,
+        sample_idx: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """s_i ∈ (0, 1) per sample; > 0.5 means "suspicious". Subclasses override
+        this and nothing else, so every variant shares the same δ formula.
+
+        Batch-relative version (M4): below-average p_t in units of the batch std.
+        Note this flags ~half of every batch regardless of how much label noise
+        exists — the noise-rate-blindness Phase C diagnosed. Kept as the reference.
+        """
+        probs = torch.softmax(logits, dim=-1)
+        p_t = probs.gather(1, targets.unsqueeze(1)).squeeze(1)      # (B,)
+        sd = p_t.std(unbiased=False).clamp_min(1e-6)
+        z = (p_t.mean() - p_t) / sd                                 # >0 ⇒ below average
+        return torch.sigmoid(z / self.temp)                         # (B,) ∈ (0, 1)
+
     def forward(
         self,
         logits: torch.Tensor,
         targets: torch.Tensor,
         features: torch.Tensor | None,
         step_frac: float,
+        sample_idx: torch.Tensor | None = None,
     ) -> torch.Tensor:
         B, n = logits.shape
 
@@ -162,12 +184,8 @@ class SampleConfidenceMargin(MarginFunction):
         with torch.no_grad():
             # Suspicion is a diagnostic read of the model's current state, never a
             # path for gradient — same stop-gradient discipline as the AS-Softmax mask.
-            probs = torch.softmax(logits, dim=-1)
-            p_t = probs.gather(1, targets.unsqueeze(1)).squeeze(1)      # (B,)
-            sd = p_t.std(unbiased=False).clamp_min(1e-6)
-            z = (p_t.mean() - p_t) / sd                                 # >0 ⇒ below average
-            s = torch.sigmoid(z / self.temp)                            # (B,) ∈ (0, 1)
-            signed = (2.0 * s - 1.0).unsqueeze(1)                       # (B, 1), batch-mean ≈ 0
+            s = self._suspicion(logits, targets, step_frac, sample_idx)
+            signed = (2.0 * s - 1.0).unsqueeze(1)                       # (B, 1)
 
         delta = delta_base - self.beta_at(step_frac) * signed
         delta = delta.clamp(self.delta_floor, self.delta_ceiling)

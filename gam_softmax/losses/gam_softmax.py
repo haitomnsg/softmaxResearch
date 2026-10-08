@@ -50,6 +50,9 @@ class GAMSoftmaxLoss(nn.Module):
         self.margin_fn = margin_fn
         self.learnable_margin = learnable_margin
         self.ste_temp = ste_temp
+        # Stateful per-sample margins need to know which training examples are in
+        # the batch; the trainer passes `sample_idx` only when this is True.
+        self.wants_sample_idx = bool(getattr(margin_fn, "wants_sample_idx", False))
 
     def forward(
         self,
@@ -57,11 +60,15 @@ class GAMSoftmaxLoss(nn.Module):
         targets: torch.Tensor,
         features: Optional[torch.Tensor] = None,
         step_frac: float = 0.0,
+        sample_idx: Optional[torch.Tensor] = None,
     ) -> dict:
         B, n = logits.shape
         # margin_fn called outside no_grad so its parameters stay in the graph;
         # the learnable-margin STE path below is what actually sends gradient to them.
-        delta = self.margin_fn(logits, targets, features, step_frac)  # (B, n)
+        if self.wants_sample_idx:
+            delta = self.margin_fn(logits, targets, features, step_frac, sample_idx=sample_idx)
+        else:
+            delta = self.margin_fn(logits, targets, features, step_frac)  # (B, n)
 
         with torch.no_grad():
             probs = torch.softmax(logits, dim=-1)
@@ -99,9 +106,15 @@ class GAMSoftmaxLoss(nn.Module):
             non_target = ~target_oh
             delta_eff = (delta.detach() * non_target.float()).sum() / max(1, non_target.sum().item())
 
-        return {
+        out = {
             "loss": loss,
             "mask": keep,
             "delta_eff": delta_eff,
             "masked_ratio": masked_ratio,
         }
+        # Optional diagnostic: a margin that estimates the label-noise rate from
+        # the data exposes it as `last_est_noise_rate`; the trainer logs it.
+        est = getattr(self.margin_fn, "last_est_noise_rate", None)
+        if est is not None:
+            out["est_noise_rate"] = torch.as_tensor(float(est), device=logits.device)
+        return out

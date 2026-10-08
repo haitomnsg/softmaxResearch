@@ -87,6 +87,14 @@ class Trainer:
             batch.labels.to(self.device, non_blocking=True),
         )
 
+    def _sample_idx(self, batch) -> Optional[torch.Tensor]:
+        """Dataset positions of the batch, for stateful per-sample losses; None if
+        the loader doesn't carry them or the loss doesn't ask for them."""
+        if not getattr(self.loss_fn, "wants_sample_idx", False):
+            return None
+        idx = getattr(batch, "idx", None)
+        return idx.to(self.device, non_blocking=True) if idx is not None else None
+
     def fit(self) -> TrainState:
         for epoch in range(self.max_epochs):
             self.state.epoch = epoch
@@ -129,12 +137,21 @@ class Trainer:
         masked_ratio_sum = 0.0
         delta_eff_sum = 0.0
         delta_eff_n = 0
+        est_noise_sum = 0.0
+        est_noise_n = 0
         n_batches = 0
         for batch in self.train_loader:
             input_ids, attention_mask, labels = self._move(batch)
             out = self.model(input_ids, attention_mask)
             step_frac = self.state.step / max(1, self.total_steps)
-            res = self.loss_fn(out.logits, labels, features=out.features, step_frac=step_frac)
+            sample_idx = self._sample_idx(batch)
+            if sample_idx is not None:
+                # training step of a stateful per-sample loss: let it update its
+                # running statistics. Eval calls (below) never pass sample_idx.
+                res = self.loss_fn(out.logits, labels, features=out.features,
+                                   step_frac=step_frac, sample_idx=sample_idx)
+            else:
+                res = self.loss_fn(out.logits, labels, features=out.features, step_frac=step_frac)
             loss = res["loss"]
 
             self.optimizer.zero_grad(set_to_none=True)
@@ -150,6 +167,9 @@ class Trainer:
             if res.get("delta_eff") is not None:
                 delta_eff_sum += float(res["delta_eff"])
                 delta_eff_n += 1
+            if res.get("est_noise_rate") is not None:
+                est_noise_sum += float(res["est_noise_rate"])
+                est_noise_n += 1
             self.state.step += 1
 
             if self.state.step % self.log_every == 0:
@@ -173,6 +193,8 @@ class Trainer:
         return {
             "train_masked_ratio": masked_ratio_sum / max(1, n_batches),
             "train_delta_eff": (delta_eff_sum / delta_eff_n) if delta_eff_n else None,
+            # mean over the epoch of the loss's own noise-rate estimate, if it has one
+            "train_est_noise_rate": (est_noise_sum / est_noise_n) if est_noise_n else None,
         }
 
     @torch.no_grad()

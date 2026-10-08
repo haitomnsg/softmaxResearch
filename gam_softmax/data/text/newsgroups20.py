@@ -15,6 +15,9 @@ class TextBatch:
     input_ids: torch.Tensor
     attention_mask: torch.Tensor
     labels: torch.Tensor
+    # position of each example in its Dataset. Stateful per-sample losses
+    # (e.g. the `loss_mixture` margin) key their running statistics on it.
+    idx: Optional[torch.Tensor] = None
 
 
 class _ListTextDataset(Dataset):
@@ -39,6 +42,7 @@ class _ListTextDataset(Dataset):
             "input_ids": enc["input_ids"].squeeze(0),
             "attention_mask": enc["attention_mask"].squeeze(0),
             "labels": torch.tensor(int(self.labels[idx]), dtype=torch.long),
+            "idx": torch.tensor(int(idx), dtype=torch.long),
         }
 
 
@@ -47,6 +51,7 @@ def _collate(batch: list[dict]) -> TextBatch:
         input_ids=torch.stack([b["input_ids"] for b in batch]),
         attention_mask=torch.stack([b["attention_mask"] for b in batch]),
         labels=torch.stack([b["labels"] for b in batch]),
+        idx=torch.stack([b["idx"] for b in batch]),
     )
 
 

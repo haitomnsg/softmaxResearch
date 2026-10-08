@@ -30,21 +30,36 @@ REPO = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO / "runs" / "phase_c"
 SEEDS = (42, 43, 44, 45, 46)
 CORE = ("softmax", "small_loss", "gce", "m4")
-MAIN = ("softmax", "small_loss", "gce", "sce", "m4", "m4_b0", "m4_b025", "m4_b05")
+PHASE_C = ("softmax", "small_loss", "gce", "sce", "m4", "m4_b0", "m4_b025", "m4_b05")
+# Phase C′ (docs/10 §3): self-calibrating M4 variants + the Phase B fairness grid
+CPRIME_T4 = ("m4v2", "m4_absgap", "m4_absgap_t03", "gce_q04", "sce_a1b1", "small_loss_half")
+CPRIME_T5 = ("m4v2", "m4_absgap")   # narrow with --methods after reading tier 4 (rule in docs/10)
+# table order
+MAIN = ("softmax", "small_loss", "small_loss_half", "gce", "gce_q04", "sce", "sce_a1b1",
+        "m4", "m4_b0", "m4_b025", "m4_b05", "m4v2", "m4_absgap", "m4_absgap_t03")
 
 # (tier, noise_type, noise, methods)
 TIERS = [
-    (1, "symmetric", 0.4, MAIN),       # headline + beta sweep (N2, N3, N4)
+    (1, "symmetric", 0.4, PHASE_C),    # headline + beta sweep (N2, N3, N4)
     (2, "pair", 0.4, CORE),            # asymmetric noise: the hard case
     (2, "pair", 0.2, CORE),
     (3, "symmetric", 0.6, CORE),       # noise-level curve
     (3, "symmetric", 0.2, CORE),
     (3, "symmetric", 0.0, CORE),       # clean: what does robustness cost?
+    (4, "symmetric", 0.4, CPRIME_T4),  # C′ home condition + fairness grid (P3)
+    (5, "symmetric", 0.0, CPRIME_T5),  # C′ P1 (clean cost) first: cheapest kill
+    (5, "pair", 0.4, CPRIME_T5),       # C′ P4
+    (5, "symmetric", 0.2, CPRIME_T5),  # C′ P2 curve
+    (5, "symmetric", 0.6, CPRIME_T5),
+    (5, "pair", 0.2, CPRIME_T5),
 ]
 
 
-def plan() -> list[tuple[int, str, float, int, str]]:
-    return [(t, kind, n, s, m) for t, kind, n, methods in TIERS for s in SEEDS for m in methods]
+def plan(methods: tuple[str, ...] | None = None) -> list[tuple[int, str, float, int, str]]:
+    jobs = [(t, kind, n, s, m) for t, kind, n, ms in TIERS for s in SEEDS for m in ms]
+    if methods is not None:
+        jobs = [j for j in jobs if j[4] in methods]
+    return jobs
 
 
 def job_path(method: str, kind: str, noise: float, seed: int) -> Path:
@@ -68,8 +83,10 @@ def run_one(method: str, kind: str, noise: float, seed: int, smoke: bool) -> Non
         print(f"[C] FAILED {method} {kind}{noise} seed={seed} after {dt:.1f} min", flush=True)
         return
     r = json.loads(out_json.read_text(encoding="utf-8"))
+    est = r.get("final_est_noise_rate")
+    est_s = f" est_noise={est:.3f}" if est is not None else ""
     print(f"[C] done  {method} {kind}{noise} seed={seed} best={r['best_val_acc']:.4f} "
-          f"sel={r['sel_val_acc']:.4f} final={r['final_val_acc']:.4f} ({dt:.1f} min)", flush=True)
+          f"sel={r['sel_val_acc']:.4f} final={r['final_val_acc']:.4f}{est_s} ({dt:.1f} min)", flush=True)
 
 
 def load_all() -> dict:
@@ -88,6 +105,14 @@ def _ms(xs: list[float]) -> str:
     if not xs:
         return "—"
     return f"{mean(xs):.2f}" if len(xs) == 1 else f"{mean(xs):.2f} ±{stdev(xs):.2f}"
+
+
+def _final_masked(rec: dict) -> float | None:
+    """Last-epoch train masked ratio; older records only have it in `history`."""
+    if rec.get("final_masked_ratio") is not None:
+        return rec["final_masked_ratio"]
+    h = rec.get("history") or []
+    return h[-1].get("train_masked_ratio") if h else None
 
 
 def _paired(a: dict, b: dict, key: str) -> str:
@@ -113,16 +138,19 @@ def write_summary() -> str:
             continue
         rows = res[cond]
         lines += [f"## {cond[0]} noise {cond[1]:.0%}", "",
-                  "| method | best (oracle) % | **sel (noisy val)** % | final % | mem @final % | sel − small_loss | sel − CE | seeds |",
-                  "|---|---|---|---|---|---|---|---|"]
+                  "| method | best (oracle) % | **sel (noisy val)** % | final % | mem @final % | masked @final | est noise | sel − small_loss | sel − CE | seeds |",
+                  "|---|---|---|---|---|---|---|---|---|---|"]
         for m in MAIN:
             if m not in rows:
                 continue
             r = rows[m]
             g = lambda k: [v[k] * 100 for v in r.values() if v.get(k) is not None]
+            masked = [_final_masked(v) for v in r.values()]
+            masked = [x for x in masked if x is not None]
+            est = [v["final_est_noise_rate"] for v in r.values() if v.get("final_est_noise_rate") is not None]
             lines.append(
                 f"| {m} | {_ms(g('best_val_acc'))} | **{_ms(g('sel_val_acc'))}** | {_ms(g('final_val_acc'))} | "
-                f"{_ms(g('final_mem_rate'))} | "
+                f"{_ms(g('final_mem_rate'))} | {_ms(masked)} | {_ms(est)} | "
                 f"{_paired(r, rows['small_loss'], 'sel_val_acc') if 'small_loss' in rows and m != 'small_loss' else '—'} | "
                 f"{_paired(r, rows['softmax'], 'sel_val_acc') if 'softmax' in rows and m != 'softmax' else '—'} | {len(r)} |")
         lines.append("")
@@ -134,6 +162,8 @@ def write_summary() -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tier", type=int, nargs="+", default=None)
+    ap.add_argument("--methods", nargs="+", default=None,
+                    help="restrict to these method names (e.g. the tier-5 selection rule)")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -145,7 +175,8 @@ def main() -> None:
     if args.smoke:
         OUT_DIR = REPO / "runs" / "phase_c_smoke"
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    jobs = [j for j in plan() if args.tier is None or j[0] in args.tier]
+    jobs = [j for j in plan(tuple(args.methods) if args.methods else None)
+            if args.tier is None or j[0] in args.tier]
     todo = [j for j in jobs if not job_path(j[4], j[1], j[2], j[3]).exists()]
     print(f"[C] {len(jobs)} jobs, {len(jobs) - len(todo)} done, {len(todo)} to run", flush=True)
     if args.dry_run:
