@@ -28,6 +28,12 @@ competing methods, and real-world noisy data (CIFAR-10N/100N).
   pattern (pair-flip: 6.7 points behind, worse than doing nothing) and it **costs 3.8 points on clean data**. The reason is simple: M4 always
   throws away about the same share of examples no matter how many labels are wrong. **Next (2026-10-08): make it look at the data to decide how
   much to throw away** (Phase C′, two variants, pass/fail rules written down first). Real-image data (CIFAR-N) waits for that.
+- **Phase C′ done (2026-10-09):** two ways of letting the data decide how much to throw away were tested against rules written down first.
+  The simple one ("drop an example when the model already prefers a different class than its label") is the **best method of all when
+  the wrong labels follow a pattern** (+5 points over plain training, +3 over the standard trick) and memorizes the fewest wrong
+  labels at every noise level (8–10%). But it still costs **1.5 points on clean data** and about 1 point against the best standard
+  loss (GCE) on random noise, so it misses the pass bar we set. The fancier one (estimate the noise rate from the loss distribution)
+  estimates the rate well (35% for a true 40%) but trains worse. **By the pre-set rule the next step is the write-up, not CIFAR-N.**
 - **If gate A fails, we stop again** and write up why. The plan states its kill criteria in advance.
 
 ```
