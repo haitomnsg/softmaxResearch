@@ -24,8 +24,11 @@ from gam_softmax.losses import (
     Entmax15Loss,
     FocalLoss,
     GAMSoftmaxLoss,
+    GCELoss,
     LabelSmoothingLoss,
     PowerSoftmaxLoss,
+    SCELoss,
+    SmallLossLoss,
     SoftmaxLoss,
     SparsemaxLoss,
 )
@@ -47,6 +50,9 @@ LOSS_REGISTRY = {
     "label_smoothing": LabelSmoothingLoss,
     "power_softmax": PowerSoftmaxLoss,
     "gam_softmax": GAMSoftmaxLoss,
+    "gce": GCELoss,
+    "sce": SCELoss,
+    "small_loss": SmallLossLoss,
 }
 
 SCHEDULE_REGISTRY = {
@@ -104,6 +110,8 @@ def build_data(cfg: dict, tokenizer):
             label_noise=cfg["dataset"].get("label_noise", 0.0),
             noise_seed=cfg["dataset"].get("noise_seed", 0),
             eval_batch_size=cfg["dataset"].get("eval_batch_size"),
+            noisy_val_frac=cfg["dataset"].get("noisy_val_frac", 0.0),
+            noise_type=cfg["dataset"].get("noise_type", "symmetric"),
         )
     raise ValueError(f"Unknown dataset: {name}")
 
@@ -111,6 +119,9 @@ def build_data(cfg: dict, tokenizer):
 def build_loss(cfg: dict, n_classes: int, feature_dim: int) -> torch.nn.Module:
     loss_cfg = dict(cfg["loss"])
     cls = LOSS_REGISTRY[loss_cfg.pop("type")]
+    # small-loss's oracle setting: forget exactly the true noise rate of this run
+    if loss_cfg.get("forget_rate") == "noise_rate":
+        loss_cfg["forget_rate"] = float(cfg.get("dataset", {}).get("label_noise", 0.0))
     # GAM-Softmax composes a margin_fn from a sub-config; build it first.
     if cls is GAMSoftmaxLoss:
         margin_cfg = loss_cfg.pop("margin")
@@ -129,6 +140,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=None, help="Override cfg.seed (used by H1 multi-seed runs)")
     ap.add_argument("--label-noise", type=float, default=None,
                     help="Override dataset.label_noise (fraction of train labels to corrupt; used by the noise sweep)")
+    ap.add_argument("--noise-type", default=None, choices=["symmetric", "pair"],
+                    help="Override dataset.noise_type")
     ap.add_argument("--device", default=None)
     ap.add_argument("--out-json", default=None,
                     help="Write the full result record (history, calibration, memorization) here")
@@ -140,6 +153,8 @@ def main() -> None:
     cfg = load_config(args.config)
     if args.label_noise is not None:
         cfg.setdefault("dataset", {})["label_noise"] = args.label_noise
+    if args.noise_type is not None:
+        cfg.setdefault("dataset", {})["noise_type"] = args.noise_type
     seed = args.seed if args.seed is not None else cfg.get("seed", 42)
     seed_everything(seed)
 
@@ -201,12 +216,17 @@ def main() -> None:
         log_every=optim_cfg.get("log_every", 25),
         grad_clip=optim_cfg.get("grad_clip", 1.0),
         probe=probe,
+        noisy_val_loader=data.get("noisy_val"),
     )
     state = trainer.fit()
     print(f"[run] done. seed={seed} best_val_acc={state.best_val_acc:.4f}")
 
     if args.out_json:
         best = max(state.history, key=lambda h: h.get("val_accuracy", -1.0)) if state.history else {}
+        # realistic protocol: pick the epoch on held-out NOISY labels (earliest on ties),
+        # report its clean test accuracy
+        nv_hist = [h for h in state.history if "noisyval_accuracy" in h]
+        sel = max(nv_hist, key=lambda h: h["noisyval_accuracy"]) if nv_hist else {}
         record = {
             "config": args.config,
             "name": cfg.get("name", Path(args.config).stem),
@@ -214,10 +234,14 @@ def main() -> None:
             "loss_type": cfg["loss"]["type"],
             "seed": seed,
             "label_noise": noise,
+            "noise_type": cfg.get("dataset", {}).get("noise_type", "symmetric"),
             "epochs": optim_cfg["epochs"],
             "best_val_acc": state.best_val_acc,
             "best_epoch": state.best_epoch,
             "final_val_acc": state.final_val_acc,
+            "sel_val_acc": sel.get("val_accuracy"),
+            "sel_epoch": sel.get("epoch"),
+            "sel_mem_rate": sel.get("mem_rate"),
             # calibration/memorization are read at the *best* epoch so they
             # describe the model you would actually keep
             "best_val_ece": best.get("val_ece"),

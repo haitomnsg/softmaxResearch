@@ -671,3 +671,49 @@ def test_sample_confidence_rejects_bad_hparams():
         SampleConfidenceMargin(n_classes=5, schedule=sch, delta_floor=0.5, delta_ceiling=0.1)
     with pytest.raises(TypeError):
         SampleConfidenceMargin(n_classes=5, schedule=sch, base_margin="not a margin")
+
+
+def test_sample_confidence_ramp_end_default_keeps_old_schedule():
+    """reject_ramp_end=1.0 (default) must reproduce the original E1 ramp exactly."""
+    m = _sample_margin(reject_warmup_frac=0.3)
+    assert m.beta_at(0.3) == 0.0
+    assert m.beta_at(0.65) == pytest.approx(0.5)
+    assert m.beta_at(1.0) == pytest.approx(1.0)
+
+
+def test_sample_confidence_ramp_end_matches_small_loss_schedule():
+    """warmup 0 + ramp_end 0.3 is the Co-teaching forget-rate shape: linear to full
+    strength at 30% of training, then held."""
+    m = _sample_margin(reject_warmup_frac=0.0, reject_ramp_end=0.3)
+    assert m.beta_at(0.0) == 0.0
+    assert m.beta_at(0.15) == pytest.approx(0.5)
+    assert m.beta_at(0.3) == pytest.approx(1.0)
+    assert m.beta_at(0.9) == pytest.approx(1.0)
+
+
+def test_sample_confidence_rejects_bad_ramp_end():
+    with pytest.raises(ValueError):
+        _sample_margin(reject_warmup_frac=0.3, reject_ramp_end=0.3)
+    with pytest.raises(ValueError):
+        _sample_margin(reject_warmup_frac=0.0, reject_ramp_end=1.5)
+
+
+def test_sample_confidence_nonneg_margin_keeps_rejections_but_trains_rest_with_ce():
+    """nonneg_margin=1.0: identical rejection decisions to plain M4, but every kept
+    sample trains with cross-entropy instead of AS-Softmax."""
+    torch.manual_seed(0)
+    plain = _sample_margin(beta=2.0, delta_floor=-1.0)
+    ce_base = _sample_margin(beta=2.0, delta_floor=-1.0, nonneg_margin=1.0)
+    logits, targets = _confidence_split_logits()
+    d_plain = plain(logits, targets, None, step_frac=1.0)
+    d_ce = ce_base(logits, targets, None, step_frac=1.0)
+    rejected = d_plain < 0
+    assert rejected.any() and (~rejected).any()
+    assert torch.equal(d_ce[rejected], d_plain[rejected])
+    assert (d_ce[~rejected] == 1.0).all()
+    # before rejection starts, the loss is exactly cross-entropy
+    gam = GAMSoftmaxLoss(n_classes=7, margin_fn=_sample_margin(n_classes=7, nonneg_margin=1.0))
+    x, y = torch.randn(16, 7), torch.randint(0, 7, (16,))
+    assert torch.allclose(gam(x, y, step_frac=0.1)["loss"], F.cross_entropy(x, y), atol=1e-5)
+    with pytest.raises(ValueError):
+        _sample_margin(nonneg_margin=1.5)

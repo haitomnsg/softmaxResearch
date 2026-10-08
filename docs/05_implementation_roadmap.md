@@ -1,5 +1,8 @@
 # Implementation Roadmap
 
+> **Superseded as the working plan (2026-10-05).** This file is the original plan, whose core hypothesis concluded negative on 2026-07-31 (see `FINAL_REPORT.md`). The active plan is [10_noisy_label_plan.md](10_noisy_label_plan.md). Kept unchanged below as history.
+
+
 How the code is organized so experiments are fast to iterate and results are
 trustworthy.
 

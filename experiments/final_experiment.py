@@ -54,6 +54,13 @@ CONFIGS = {
     "gam_m4":      "configs/final/20ng_gam_m4.yaml",
     "gam_m4_b05":  "configs/final/20ng_gam_m4_beta05.yaml",
     "gam_m6":      "configs/final/20ng_gam_m6.yaml",
+    # standard noisy-label baselines (added 2026-10-05)
+    "gce":         "configs/final/20ng_gce.yaml",
+    "sce":         "configs/final/20ng_sce.yaml",
+    "small_loss":  "configs/final/20ng_small_loss.yaml",
+    # gate-B fair re-test (2026-10-05)
+    "gam_m4_matched": "configs/final/20ng_gam_m4_matched.yaml",
+    "gam_m4_ce":      "configs/final/20ng_gam_m4_ce.yaml",
 }
 
 MAIN = ["softmax", "as_softmax", "gam_m3", "gam_m4"]
@@ -75,7 +82,7 @@ def run_one(method: str, noise: float, seed: int, smoke: bool) -> dict | None:
     out_json = job_path(method, noise, seed)
     log_path = out_json.with_suffix(".log")
     cmd = [
-        sys.executable, "experiments/run.py",
+        sys.executable, "-u", "experiments/run.py",   # -u: live epoch lines in the .log
         "--config", CONFIGS[method],
         "--seed", str(seed),
         "--label-noise", str(noise),
@@ -211,7 +218,14 @@ def main() -> None:
     ap.add_argument("--smoke", action="store_true", help="30-step runs; validates the plan, not the science")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true", help="Re-run jobs that already have results")
+    # custom grid instead of the fixed PLAN — e.g. a multi-seed confirmation sweep
+    ap.add_argument("--methods", nargs="+", default=None, choices=list(CONFIGS),
+                    help="With --seeds: run this method grid instead of PLAN")
+    ap.add_argument("--seeds", type=int, nargs="+", default=None)
+    ap.add_argument("--noise", type=float, nargs="+", default=[0.4])
     args = ap.parse_args()
+    if (args.methods is None) != (args.seeds is None):
+        ap.error("--methods and --seeds go together")
 
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -219,7 +233,11 @@ def main() -> None:
         pass
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    plan = [j for j in PLAN if args.only_block is None or j[0] in args.only_block]
+    if args.seeds is not None:
+        # seed-major, so every finished seed is a complete method comparison
+        plan = [(0, m, n, s) for n in args.noise for s in args.seeds for m in args.methods]
+    else:
+        plan = [j for j in PLAN if args.only_block is None or j[0] in args.only_block]
     todo = [j for j in plan if args.force or not job_path(j[1], j[2], j[3]).exists()]
 
     print(f"[E1] {len(plan)} jobs in plan, {len(plan) - len(todo)} already done, {len(todo)} to run")

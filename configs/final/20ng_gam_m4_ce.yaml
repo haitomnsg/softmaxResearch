@@ -1,0 +1,50 @@
+name: final_20ng_gam_m4_ce
+seed: 42
+
+# GATE-B FAIR RE-TEST (2026-10-05), decision rule fixed before running:
+# if the better of gam_m4_matched / gam_m4_ce is > 1 pt behind small_loss on
+# last-epoch accuracy (5 seeds), stop and write up. No further tuning either way.
+# Variant 2 = variant 1 with ONLY the base loss changed: samples M4 rejects (δ < 0)
+# are rejected identically; every other sample trains with plain CE, like small-loss.
+
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: false        # this margin has no learnable parameters
+  margin:
+    type: sample_confidence
+    beta: 1.0                    # max per-sample deviation from the base margin
+    temp: 1.0                    # suspicion softness, in batch-std units
+    reject_warmup_frac: 0.0      # matched to small-loss: β ramps from step 0 ...
+    reject_ramp_end: 0.3         # ... to full strength at 30%, then holds (Co-teaching shape)
+    delta_floor: -1.0            # allow full sample rejection
+    delta_ceiling: 0.15          # one-sided: never tighter than AS-Softmax
+    nonneg_margin: 1.0           # kept samples train with plain CE; rejections identical to gam_m4_matched
+    schedule:
+      type: linear
+      delta_min: 0.0
+      delta_max: 0.15            # == as_softmax delta
+      warmup_frac: 0.1           # == as_softmax warmup_frac
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, m4_ce, gate_b_retest]

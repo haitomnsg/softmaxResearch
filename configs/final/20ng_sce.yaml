@@ -1,0 +1,33 @@
+name: final_20ng_sce
+seed: 42
+
+# Noisy-label baseline: Symmetric Cross-Entropy. Same dataset/model/training
+# blocks as every config in configs/final/ — only the loss differs.
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: sce
+  alpha: 0.1                   # paper CIFAR-10 defaults (Wang et al. 2019); untuned here
+  beta: 1.0
+  log_zero: -4.0
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, sce, noisy_baseline]

@@ -1,5 +1,8 @@
 # Timeline and Milestones
 
+> **Superseded as the working plan (2026-10-05).** This file is the original plan, whose core hypothesis concluded negative on 2026-07-31 (see `FINAL_REPORT.md`). The active plan is [10_noisy_label_plan.md](10_noisy_label_plan.md). Kept unchanged below as history.
+
+
 16-week plan, starting **2026-05-23**, targeting a paper draft by
 **2026-09-12** (a comfortable margin before NeurIPS / ICLR cycles depending
 on which year's deadline). Adjust the start date everywhere if you're

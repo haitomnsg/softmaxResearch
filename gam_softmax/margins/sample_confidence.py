@@ -56,8 +56,13 @@ class SampleConfidenceMargin(MarginFunction):
     reject_warmup_frac : float
         Fraction of training during which ``β(τ) = 0``. Early on the model is
         near-random, so p_t carries no signal about which labels are wrong;
-        rejecting samples then would just discard data at random. β ramps
-        linearly from 0 to ``beta`` over the remainder of training.
+        rejecting samples then would just discard data at random. β then ramps
+        linearly from 0 to ``beta`` until ``reject_ramp_end``.
+    reject_ramp_end : float
+        Training fraction at which β reaches its full value (default 1.0: the
+        ramp spans the rest of training). Setting it to e.g. 0.3 with
+        ``reject_warmup_frac=0`` reproduces the small-loss / Co-teaching
+        forget-rate schedule (full rejection strength from 30% on).
     delta_floor : float
         Lower clamp on δ. Since ``p_t − p_j ∈ [−1, 1]``, ``delta_floor = −1``
         permits full rejection of a sample; ``delta_floor = 0`` forbids masking
@@ -69,6 +74,12 @@ class SampleConfidenceMargin(MarginFunction):
         them. That keeps the comparison against AS-Softmax honest — any
         difference comes from what the method does to suspicious samples, not
         from quietly reverting confident ones to dense cross-entropy.
+    nonneg_margin : float | None
+        If set, every sample whose margin is **not** negative gets this value
+        instead, while rejected samples (δ < 0) keep theirs. ``1.0`` keeps
+        exactly the same rejection decisions but trains every kept sample with
+        plain cross-entropy (δ = 1 masks nothing), separating "which samples are
+        rejected" from "which base loss the rest train on".
     base_margin : MarginFunction | None
         Optional inner margin to modulate instead of the scalar schedule. Pass
         a ``ClassPairLowRankMargin`` here to get the **combined** class-pair ×
@@ -82,8 +93,10 @@ class SampleConfidenceMargin(MarginFunction):
         beta: float = 0.5,
         temp: float = 1.0,
         reject_warmup_frac: float = 0.3,
+        reject_ramp_end: float = 1.0,
         delta_floor: float = -1.0,
         delta_ceiling: float = 1.0,
+        nonneg_margin: float | None = None,
         base_margin: MarginFunction | None = None,
     ):
         super().__init__()
@@ -95,6 +108,10 @@ class SampleConfidenceMargin(MarginFunction):
             raise ValueError(
                 f"reject_warmup_frac must be in [0, 1], got {reject_warmup_frac}"
             )
+        if reject_warmup_frac < 1.0 and not reject_warmup_frac < reject_ramp_end <= 1.0:
+            raise ValueError(
+                f"reject_ramp_end must be in (reject_warmup_frac, 1], got {reject_ramp_end}"
+            )
         if not -1.0 <= delta_floor <= 1.0:
             raise ValueError(f"delta_floor must be in [-1, 1], got {delta_floor}")
         if not -1.0 <= delta_ceiling <= 1.0:
@@ -103,6 +120,8 @@ class SampleConfidenceMargin(MarginFunction):
             raise ValueError(
                 f"delta_floor must be <= delta_ceiling, got {delta_floor} > {delta_ceiling}"
             )
+        if nonneg_margin is not None and not 0.0 <= nonneg_margin <= 1.0:
+            raise ValueError(f"nonneg_margin must be in [0, 1], got {nonneg_margin}")
         if base_margin is not None and not isinstance(base_margin, MarginFunction):
             raise TypeError(
                 f"base_margin must be a MarginFunction, got {type(base_margin).__name__}"
@@ -112,16 +131,18 @@ class SampleConfidenceMargin(MarginFunction):
         self.beta = beta
         self.temp = temp
         self.reject_warmup_frac = reject_warmup_frac
+        self.reject_ramp_end = reject_ramp_end
         self.delta_floor = delta_floor
         self.delta_ceiling = delta_ceiling
+        self.nonneg_margin = nonneg_margin
         self.base_margin = base_margin
 
     def beta_at(self, step_frac: float) -> float:
-        """β(τ): 0 through the warmup, then a linear ramp to ``beta``."""
+        """β(τ): 0 through the warmup, then a linear ramp to ``beta`` at ``reject_ramp_end``."""
         w = self.reject_warmup_frac
         if w >= 1.0:
             return 0.0
-        ramp = (step_frac - w) / (1.0 - w)
+        ramp = (step_frac - w) / (self.reject_ramp_end - w)
         return self.beta * min(1.0, max(0.0, ramp))
 
     def forward(
@@ -150,4 +171,6 @@ class SampleConfidenceMargin(MarginFunction):
 
         delta = delta_base - self.beta_at(step_frac) * signed
         delta = delta.clamp(self.delta_floor, self.delta_ceiling)
+        if self.nonneg_margin is not None:
+            delta = torch.where(delta < 0, delta, torch.full_like(delta, self.nonneg_margin))
         return delta.expand(B, n) if delta.shape[1] == 1 else delta

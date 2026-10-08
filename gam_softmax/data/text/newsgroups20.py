@@ -78,6 +78,8 @@ def load_20newsgroups(
     label_noise: float = 0.0,
     noise_seed: int = 0,
     eval_batch_size: Optional[int] = None,
+    noisy_val_frac: float = 0.0,
+    noise_type: str = "symmetric",
 ) -> dict:
     """Load 20 Newsgroups (sklearn) and return train/val DataLoaders.
 
@@ -88,6 +90,12 @@ def load_20newsgroups(
     Set ``label_noise`` > 0 to corrupt that fraction of *training* labels
     (symmetric noise; val stays clean) — the hard regime where masking losses
     are expected to beat plain cross-entropy.
+
+    Set ``noisy_val_frac`` > 0 to hold out that fraction of the training set,
+    **with its noisy labels**, as a ``noisy_val`` loader for model selection.
+    That is the realistic protocol: under label noise there is no clean val set,
+    so picking the epoch on the clean test split is an oracle. The split is
+    seeded by ``noise_seed`` so every method holds out the same examples.
     """
     tr_texts, tr_labels = _fetch("train")
     va_texts, va_labels = _fetch("test")
@@ -99,11 +107,22 @@ def load_20newsgroups(
         from gam_softmax.data.label_noise import inject_label_noise
 
         tr_labels = inject_label_noise(
-            tr_labels, NEWSGROUPS20_NUM_CLASSES, label_noise, seed=noise_seed
+            tr_labels, NEWSGROUPS20_NUM_CLASSES, label_noise, seed=noise_seed, kind=noise_type
         )
 
+    held = None
+    if noisy_val_frac and noisy_val_frac > 0.0:
+        from gam_softmax.data.label_noise import split_heldout
+
+        held_idx, keep_idx = split_heldout(len(tr_texts), noisy_val_frac, seed=noise_seed)
+        held = _ListTextDataset([tr_texts[i] for i in held_idx], [tr_labels[i] for i in held_idx],
+                                tokenizer, max_seq_len)
+        tr_texts = [tr_texts[i] for i in keep_idx]
+        tr_labels = [tr_labels[i] for i in keep_idx]
+        clean_labels = [clean_labels[i] for i in keep_idx]
+
     train_ds = _ListTextDataset(tr_texts, tr_labels, tokenizer, max_seq_len)
-    return {
+    out = {
         "train": DataLoader(
             train_ds,
             batch_size=batch_size,
@@ -125,3 +144,12 @@ def load_20newsgroups(
         "train_noisy_labels": list(tr_labels),
         "collate": _collate,
     }
+    if held is not None:
+        out["noisy_val"] = DataLoader(
+            held,
+            batch_size=eval_batch_size or batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            collate_fn=_collate,
+        )
+    return out

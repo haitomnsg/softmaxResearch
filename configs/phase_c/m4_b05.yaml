@@ -1,0 +1,48 @@
+name: phase_c_m4_b05
+seed: 42
+
+# PHASE C (docs/10_noisy_label_plan.md), 2026-10-05. Same recipe as configs/final/
+# except: 8 epochs (memorization compounds), and 10% of the training set held out
+# WITH its noisy labels for realistic model selection (`sel_val_acc`).
+# Only the loss block differs between configs in this directory.
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+  noisy_val_frac: 0.1       # held-out NOISY split for model selection
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: gam_softmax
+  learnable_margin: false        # this margin has no learnable parameters
+  margin:
+    type: sample_confidence
+    beta: 0.5
+    temp: 1.0                    # suspicion softness, in batch-std units
+    reject_warmup_frac: 0.0      # matched to small-loss: β ramps from step 0 ...
+    reject_ramp_end: 0.3         # ... to full strength at 30%, then holds (Co-teaching shape)
+    delta_floor: -1.0            # allow full sample rejection
+    delta_ceiling: 0.15          # one-sided: never tighter than AS-Softmax
+    schedule:
+      type: linear
+      delta_min: 0.0
+      delta_max: 0.15            # == as_softmax delta
+      warmup_frac: 0.1           # == as_softmax warmup_frac
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 8
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, m4_matched, gate_b_retest]

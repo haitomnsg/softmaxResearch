@@ -1,5 +1,8 @@
 # Experimental Plan
 
+> **Superseded as the working plan (2026-10-05).** This file is the original plan, whose core hypothesis concluded negative on 2026-07-31 (see `FINAL_REPORT.md`). The active plan is [10_noisy_label_plan.md](10_noisy_label_plan.md). Kept unchanged below as history.
+
+
 Goal: produce a results table that a reviewer at ACL / EMNLP / ICLR / NeurIPS
 cannot dismiss. That means strong baselines, multiple seeds, careful
 ablations, and breadth across modalities.

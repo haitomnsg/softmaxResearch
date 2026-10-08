@@ -60,6 +60,7 @@ class Trainer:
         eval_every_steps: Optional[int] = None,
         grad_clip: Optional[float] = 1.0,
         probe: Optional[dict] = None,
+        noisy_val_loader: Optional[DataLoader] = None,
     ):
         self.model = model.to(device)
         self.loss_fn = loss_fn.to(device) if isinstance(loss_fn, nn.Module) else loss_fn
@@ -73,6 +74,7 @@ class Trainer:
         self.eval_every_steps = eval_every_steps
         self.grad_clip = grad_clip
         self.probe = probe
+        self.noisy_val_loader = noisy_val_loader
         self.state = TrainState()
 
         steps_per_epoch = len(train_loader)
@@ -96,6 +98,10 @@ class Trainer:
                 **train_stats,
                 **{"val_" + k: v for k, v in val.items()},
             }
+            if self.noisy_val_loader is not None:
+                # held-out *noisy* labels: the realistic model-selection signal
+                nv = self.evaluate(self.noisy_val_loader)
+                entry["noisyval_accuracy"] = nv["accuracy"]
             if self.probe is not None:
                 entry.update(self.run_probe())
             self.state.history.append(entry)

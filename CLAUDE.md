@@ -4,21 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A research codebase for **GAM-Softmax** (Generalized Adaptive Margin Softmax) — extends AS-Softmax (Lv et al. 2023) by replacing its single scalar margin δ with a margin function δ_{t,j}(x, t) parameterized along class-pair, sample, and time axes. Target venue: ACL / EMNLP / ICLR / NeurIPS. The whole research plan lives in [docs/](docs/) (10 files, navigate via [docs/README.md](README.md) from project root or the top-level `README.md`).
+A research codebase for **GAM-Softmax** (Generalized Adaptive Margin Softmax) — extends AS-Softmax (Lv et al. 2023) by replacing its single scalar margin δ with a margin function δ_{t,j}(x, t) parameterized along class-pair, sample, and time axes. Target venue: ACL / EMNLP / ICLR / NeurIPS. The original research plan lives in [docs/](docs/) files 00–09 (navigate via the top-level `README.md`); its core hypothesis concluded negative on 2026-07-31 ([FINAL_REPORT.md](FINAL_REPORT.md)). **The active plan since 2026-10-05 is [docs/10_noisy_label_plan.md](docs/10_noisy_label_plan.md)**: the M4 negative-margin idea as a noisy-label method, with gates and kill criteria. Update its §6 status table as phases land.
 
 ## Environment
 
-Python is Anaconda-only on this machine; there is no `python` on `PATH`. Use the project env:
+Python is Miniconda-only on this machine; there is no `python` on `PATH`. Use the project env:
 
 ```bash
-# env name: gam (Python 3.11.15, torch 2.6.0+cu124)
-"/c/Users/LOQ/.conda/envs/gam/python.exe"        # bash / git-bash
-C:\Users\LOQ\.conda\envs\gam\python.exe           # cmd / powershell
+# env name: gam (Python 3.11, torch 2.6.0+cu124, transformers 5.x)
+"/c/Users/MSi/miniconda3/envs/gam/python.exe"     # bash / git-bash
+C:\Users\MSi\miniconda3\envs\gam\python.exe        # cmd / powershell
 # or activate it:
 conda activate gam
 ```
 
-GPU: **RTX 3050 Laptop, 6 GB VRAM** — much smaller than the RTX 3090/4090 the [docs/](docs/) assume. Scale batch sizes / model variants down accordingly (BERT-base with `batch_size=16, max_seq_len=128` fits at ~2.5 GB; ViT-S over ViT-L; gradient checkpointing when needed).
+**Windows Smart App Control blocks unsigned DLLs** ("An Application Control policy has blocked this file"). conda-forge and many pip wheels ship unsigned `.pyd` files; Anaconda's `defaults` channel ships signed ones. So install **compiled packages via `conda install` from `defaults`** (numpy, scipy, pandas, scikit-learn, matplotlib, pyarrow, tokenizers, `python-xxhash`, yarl, ...) and use pip only for torch (cu124 index) and pure-Python packages (transformers, datasets, entmax, einops, wandb). torchaudio is not installed: its DLLs are blocked and nothing imports it.
+
+Hardware: **RTX 3080 Ti (12 GB VRAM)**, i7-12700K (12C/20T), **16 GB system RAM**, desktop that can run 24/7. VRAM is still below the 24 GB RTX 3090/4090 the [docs/](docs/) assume: BERT-base with `batch_size=16, max_seq_len=128` uses ~2.5 GB, so longer sequences / larger batches / BERT-large-with-checkpointing are now possible. System RAM is the tighter limit for big datasets and many dataloader workers. Earlier results (through 2026-07-31) were produced on a 6 GB RTX 3050 laptop; the `runs/` artifacts did not migrate (gitignored).
 
 ## Commands
 

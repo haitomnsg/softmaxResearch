@@ -1,0 +1,34 @@
+name: final_20ng_small_loss
+seed: 42
+
+# Noisy-label baseline: single-network small-loss selection (Co-teaching's rule).
+# The direct competitor to M4: M4 claims to be this idea expressed as a margin
+# with delta < 0, so the paper needs M4 >= this row. Same dataset/model/training
+# blocks as every config in configs/final/ — only the loss differs.
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: small_loss
+  forget_rate: 0.4             # == the noise rate (oracle), as in Co-teaching
+  ramp_frac: 0.3               # full rejection from 30% of training on. NOT matched to M4: M4 has beta = 0 until 30%, then ramps to full strength only at 100%
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 4
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, small_loss, noisy_baseline]

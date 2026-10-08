@@ -1,0 +1,36 @@
+name: phase_c_small_loss
+seed: 42
+
+# PHASE C (docs/10_noisy_label_plan.md), 2026-10-05. Same recipe as configs/final/
+# except: 8 epochs (memorization compounds), and 10% of the training set held out
+# WITH its noisy labels for realistic model selection (`sel_val_acc`).
+# Only the loss block differs between configs in this directory.
+
+dataset:
+  name: 20newsgroups
+  batch_size: 16
+  eval_batch_size: 64      # eval-only; no effect on results, ~3x faster validation
+  max_seq_len: 128
+  num_workers: 0
+  noisy_val_frac: 0.1       # held-out NOISY split for model selection
+
+model:
+  backbone: bert-base-uncased
+  dropout: 0.1
+
+loss:
+  type: small_loss
+  forget_rate: noise_rate      # oracle: run.py fills in this run's true noise rate
+  ramp_frac: 0.3               # full rejection from 30% on: same shape as M4 (reject_warmup_frac 0, reject_ramp_end 0.3)
+
+training:
+  optimizer: adamw
+  lr: 2.0e-5
+  weight_decay: 0.01
+  epochs: 8
+  grad_clip: 1.0
+  log_every: 200
+
+logging:
+  wandb_project: gam-softmax
+  wandb_tags: [final, 20ng, small_loss, noisy_baseline]

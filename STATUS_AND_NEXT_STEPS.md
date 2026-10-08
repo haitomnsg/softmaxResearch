@@ -1,11 +1,45 @@
 # Where We Are & What To Do Next (plain-English version)
 
-*Last updated: 2026-07-31. This is the simple companion to `README.md` and `docs/`.
+*Last updated: 2026-10-05. This is the simple companion to `README.md` and `docs/`.
 No math required to read it.*
 
 ---
 
-# ✅ PROJECT CONCLUDED — 2026-07-31
+# 🔄 RE-OPENED — 2026-10-05 (new direction)
+
+**The working plan is now [docs/10_noisy_label_plan.md](docs/10_noisy_label_plan.md).**
+
+In plain words: the original idea ("a smart gap beats one fixed gap") failed and stays
+closed. The project restarts from the **one thing that worked**: letting the gap go
+negative, so the model ignores examples it distrusts. That idea now becomes a method for
+training on **wrong labels**, and gets tested properly this time: more seeds, the real
+competing methods, and real-world noisy data (CIFAR-10N/100N).
+
+- **New machine:** desktop RTX 3080 Ti, runs 24/7. One run takes ~7 min (was ~25 on the laptop).
+- **Gate A PASSED (2026-10-05):** on 5 seeds, the negative-gap method (M4) ends up **+1.8 points** more accurate than plain
+  training and memorizes **half as many** wrong labels (17% vs 35%), on every seed. Smaller than the old 2-seed +2.8, but real.
+- **Gate B FAILED (2026-10-05):** all three standard competitors (GCE, SCE, small-loss selection) beat M4 by ~2 points on
+  every seed, even untuned. But the test was tilted against M4 (it switches on later and starts from a weaker base loss).
+  **Fair re-test (2026-10-05):** fixing only *when* M4 starts rejecting closed the gap. M4 now ties the best
+  standard method (67.4 vs 67.8, inside the 1-point bar we set in advance), without being told the noise rate, and
+  memorizes the fewest wrong labels of all seven methods (8%). It does not *beat* them on accuracy. Next: phase C.
+- **Phase C done (2026-10-07):** with the realistic "pick the epoch on noisy held-out labels" rule, M4 is the **best** of 8 methods at 40% random
+  noise (67.4 vs 67.3 for the best standard method) and memorizes the fewest wrong labels (16%). But it **fails** when the wrong labels follow a
+  pattern (pair-flip: 6.7 points behind, worse than doing nothing) and it **costs 3.8 points on clean data**. The reason is simple: M4 always
+  throws away about the same share of examples no matter how many labels are wrong. **Next (2026-10-08): make it look at the data to decide how
+  much to throw away** (Phase C′, two variants, pass/fail rules written down first). Real-image data (CIFAR-N) waits for that.
+- **If gate A fails, we stop again** and write up why. The plan states its kill criteria in advance.
+
+```
+[gate A: replicate on 5 seeds] -> [gate B: beat real baselines] -> [fill gaps: β, noise types]
+          (PASSED)              (FAILED, then PASSED re-test)                       |
+                                                                           v
+                               [paper] <- [theory] <- [real noisy data: CIFAR-10N/100N]
+```
+
+---
+
+# ✅ (FIRST HYPOTHESIS) CONCLUDED — 2026-07-31
 
 **The full write-up is [FINAL_REPORT.md](FINAL_REPORT.md). Read that. Everything
 below this banner is the history that led there, kept so the "why" is recoverable.**

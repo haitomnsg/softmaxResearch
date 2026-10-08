@@ -7,6 +7,7 @@ from gam_softmax.losses.focal import FocalLoss
 from gam_softmax.losses.label_smoothing import LabelSmoothingLoss
 from gam_softmax.losses.power_softmax import PowerSoftmaxLoss
 from gam_softmax.losses.gam_softmax import GAMSoftmaxLoss
+from gam_softmax.losses.noisy_label import GCELoss, SCELoss, SmallLossLoss
 
 __all__ = [
     "SoftmaxLoss",
@@ -18,4 +19,7 @@ __all__ = [
     "LabelSmoothingLoss",
     "PowerSoftmaxLoss",
     "GAMSoftmaxLoss",
+    "GCELoss",
+    "SCELoss",
+    "SmallLossLoss",
 ]
