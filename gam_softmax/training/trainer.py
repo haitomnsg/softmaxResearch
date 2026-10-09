@@ -12,6 +12,7 @@ from gam_softmax.eval.classification import (
     classification_metrics,
     expected_calibration_error,
 )
+from gam_softmax.eval.mechanism import label_gap, per_sample_grad_l1, summarize
 
 
 @dataclass
@@ -230,15 +231,26 @@ class Trainer:
 
     @torch.no_grad()
     def run_probe(self) -> dict:
-        """Memorization diagnostics over a fixed sample of the training set."""
+        """Memorization diagnostics over a fixed sample of the training set.
+
+        Also records where the loss sends its gradient (``gam_softmax.eval.mechanism``):
+        one autograd call on the detached probe logits per batch, so no model backward
+        and no RNG use; the training trajectory is unchanged.
+        """
         self.model.eval()
         preds: list[torch.Tensor] = []
         given: list[torch.Tensor] = []
+        gaps: list[torch.Tensor] = []
+        grads: list[torch.Tensor] = []
+        step_frac = self.state.step / max(1, self.total_steps)
         for batch in self.probe["loader"]:
             input_ids, attention_mask, labels = self._move(batch)
             out = self.model(input_ids, attention_mask)
             preds.append(out.logits.argmax(dim=-1).cpu())
             given.append(labels.cpu())
+            gaps.append(label_gap(out.logits, labels).cpu())
+            grads.append(per_sample_grad_l1(self.loss_fn, out.logits, labels, step_frac,
+                                            features=out.features).cpu())
         if not preds:
             return {}
         preds_t = torch.cat(preds)
@@ -257,5 +269,6 @@ class Trainer:
         if bool(flipped.any()):
             out["mem_rate"] = float((preds_t[flipped] == given_t[flipped]).float().mean())
             out["recover_rate"] = float((preds_t[flipped] == clean_t[flipped]).float().mean())
+        out.update(summarize(torch.cat(gaps), torch.cat(grads), flipped))
         self.model.train()
         return out

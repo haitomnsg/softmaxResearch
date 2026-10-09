@@ -40,6 +40,26 @@ class AbsoluteGapMargin(SampleConfidenceMargin):
             raise ValueError(f"offset must be in [-1, 1], got {offset}")
         self.offset = offset
 
+    def rejection_band(self, delta_base: float, beta: float | None = None,
+                       n_grid: int = 200_001) -> tuple[float, float] | None:
+        """Lead interval [g_lo, g_hi] over which a sample is fully rejected at strength β.
+
+        With gap g = max_{j≠t} p_j − p_t and 2σ(x) − 1 = tanh(x/2), the GAM loss is
+        exactly zero with g > 0 iff  β·tanh((g − offset)/(2·temp)) ≥ δ_base + g  and
+        g ≤ −delta_floor. The left side is concave in g, so the set is one interval
+        (or empty). Leads below g_lo are trained on (too small to distrust); leads
+        above g_hi are trained on too, against the leading class only, since the
+        margin can fall no lower than δ_base − β. ``beta`` defaults to the full value.
+        """
+        b = self.beta if beta is None else beta
+        g = torch.linspace(0.0, 1.0, n_grid, dtype=torch.float64)
+        ok = (b * torch.tanh((g - self.offset) / (2.0 * self.temp)) >= delta_base + g) \
+            & (g <= -self.delta_floor)
+        if not bool(ok.any()):
+            return None
+        sel = g[ok]
+        return float(sel.min()), float(sel.max())
+
     @torch.no_grad()
     def _suspicion(
         self,

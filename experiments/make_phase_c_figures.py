@@ -42,6 +42,12 @@ METHODS = [  # (key, label, hex)
 INK, INK2, GRID, SURFACE = "#0b0b0b", "#52514e", "#e6e5e1", "#fcfcfb"
 SYM = [0.0, 0.2, 0.4, 0.6]
 PAIR = [0.2, 0.4]
+EXTS = ("png",)   # make_paper_figures.py redirects FIGS and adds "pdf"
+
+
+def save(fig, name: str) -> None:
+    for ext in EXTS:
+        fig.savefig(FIGS / f"{name}.{ext}", dpi=160, facecolor=SURFACE)
 
 
 def load() -> dict:
@@ -135,7 +141,7 @@ def fig_noise_curves(res: dict) -> None:
     fig.suptitle("20 Newsgroups, BERT-base, 8 epochs, 5 seeds (mean ± sd). Right: no corrupted labels at 0%.",
                  color=INK2, fontsize=9.5, y=0.99)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(FIGS / "figC1_noise_curves.png", dpi=160, facecolor=SURFACE)
+    save(fig, "figC1_noise_curves")
     plt.close(fig)
 
 
@@ -169,7 +175,7 @@ def fig_pair_noise(res: dict) -> None:
     fig.suptitle("Pair-flip noise (each corrupted label goes to one fixed wrong class). 5 seeds, mean ± sd.",
                  color=INK2, fontsize=9.5, y=0.99)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(FIGS / "figC2_pair_noise.png", dpi=160, facecolor=SURFACE)
+    save(fig, "figC2_pair_noise")
     plt.close(fig)
 
 
@@ -193,7 +199,7 @@ def fig_masking_dynamics(res: dict) -> None:
     ax.set_title("40% symmetric noise: how fast each method fits the wrong labels",
                  color=INK2, fontsize=9.5, loc="left")
     fig.tight_layout()
-    fig.savefig(FIGS / "figC3_masking_dynamics.png", dpi=160, facecolor=SURFACE)
+    save(fig, "figC3_masking_dynamics")
     plt.close(fig)
 
 

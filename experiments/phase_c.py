@@ -132,7 +132,7 @@ def write_summary() -> str:
              "Plan: `docs/10_noisy_label_plan.md` §3. **sel** (epoch chosen on the held-out NOISY 10% "
              "of train) is the realistic number; **best** (chosen on clean test) is an oracle upper bound. "
              "`m4_b0` is AS-Softmax exactly. Regenerate: `python experiments/phase_c.py`.", ""]
-    order = [(k, n) for _, k, n, _ in TIERS]
+    order = list(dict.fromkeys((k, n) for _, k, n, _ in TIERS))   # conditions repeat across tiers
     for cond in order:
         if cond not in res:
             continue
