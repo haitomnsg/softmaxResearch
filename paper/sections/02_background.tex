@@ -1,0 +1,55 @@
+\section{Background and related work}
+\label{sec:background}
+
+\paragraph{Masked softmax.}
+Let $o \in \R^C$ be the logits for an input with training label $y$ (possibly corrupted) and
+$p = \mathrm{softmax}(o)$. AS-Softmax \citep{lv2023assoftmax} keeps the label and every competitor
+the label does not yet beat by a margin $\delta$,
+\begin{equation}
+  K_\delta = \{y\} \cup \{\, j \ne y : \sg(p_y - p_j) < \delta \,\},
+  \qquad
+  \ell_\delta(o, y) = -o_y + \log \sum_{j \in K_\delta} e^{o_j},
+  \label{eq:masked}
+\end{equation}
+where $\sg$ is stop-gradient: the mask is recomputed every step but no gradient flows through
+it. With $\delta = 1$ the mask keeps every class with $p_j > p_y - 1$, which is all of them
+unless $p_y = 1$ exactly, and $\ell_1$ is cross-entropy. AS-Softmax uses a small positive
+constant ($\delta = 0.15$ here, reached after a 10\% warm-up). It is one of many margin losses
+\citep{liu2016lsoftmax,wang2018amsoftmax,cao2019ldam}. It differs from the angular ones by
+working in probability space and by \emph{removing} classes instead of shifting logits, which is
+what produces the exact zeros used below.
+
+\paragraph{Sample selection.}
+The small-loss trick trains on the fraction of each mini-batch with the lowest loss. The rejected
+fraction follows a schedule that ramps to a forget rate $r$, usually set to the true or estimated
+noise rate \citep{jiang2018mentornet,han2018coteaching,yu2019coteachingplus,wei2020jocor}.
+DivideMix \citep{li2020dividemix}, following \citet{arazo2019unsupervised}, replaces the fixed rate
+with a two-component mixture fitted to per-sample losses, and Confident Learning
+\citep{northcutt2021confident} estimates per-class noise rates before pruning. A second line filters
+on \emph{disagreement} between the prediction and the label: INCV \citep{chen2019understanding} and
+SELF \citep{nguyen2020self} keep samples whose (cross-validated or ensembled) prediction matches the
+label, SELFIE \citep{song2019selfie} refurbishes labels with consistent predictions, and AUM
+\citep{pleiss2020aum} ranks samples by the margin between the assigned logit and the largest other
+one, averaged over training. Our absolute statistic is the probability-space, single-step version
+of this disagreement signal, applied inside the loss rather than as a separate filtering stage.
+Loss truncation \citep{kang2020losstruncation} applies the small-loss idea to text generation.
+
+\paragraph{Selection as an implicit loss.}
+Viewing selection as a loss is not new. Self-paced learning \citep{kumar2010spl} selects samples
+whose loss is below a threshold, and \citet{meng2017spl} show its alternating optimization
+minimizes a concave, robust surrogate of the original loss. Trimmed loss minimization
+\citep{shen2019trimmed} and the curriculum loss \citep{lyu2020curriculum} make the same link for
+rank-based selection. These views act on the scalar \emph{loss value}. Ours acts inside the
+softmax on the \emph{label gap}. The selection threshold then has a direct geometric meaning (how
+far another class leads), and the AS-Softmax sparsity, small-loss rejection and disagreement
+filtering become one family whose members differ only in the statistic that sets $\delta_i$.
+
+\paragraph{Robust losses and label noise in text.}
+Robust losses bound or reshape the gradient of poorly fitted samples instead of zeroing it: MAE
+\citep{ghosh2017robust}, GCE \citep{zhang2018gce}, SCE \citep{wang2019sce}, normalized losses
+\citep{ma2020normalized}. Others correct the targets \citep{reed2015bootstrap,patrini2017making}
+or regularize toward early predictions \citep{liu2020elr}. Surveys cover the field
+\citep{song2022survey}, and CIFAR-N provides real human noise for images \citep{wei2022cifarn}.
+For text classification, \citet{jindal2019effective} add a noise-modelling layer, and
+\citet{zhu2022bert} find pre-trained BERT fairly robust to injected noise when training is stopped
+early. Our protocol makes early stopping itself noisy by choosing the epoch on noisy held-out labels.

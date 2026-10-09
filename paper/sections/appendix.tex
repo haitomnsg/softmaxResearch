@@ -1,0 +1,141 @@
+\section{Proofs}
+\label{app:proofs}
+
+\paragraph{\Cref{prop:zero}.}
+Every $j \ne y$ is dropped iff $p_y - p_j \ge \delta$ for all $j \ne y$, i.e.\ iff
+$\min_{j\ne y}(p_y - p_j) = -g \ge \delta$. Then $K_\delta = \{y\}$ and
+$\ell_\delta = -o_y + \log e^{o_y} = 0$. Because the mask is under stop-gradient it is held fixed
+when differentiating, and the loss is identically zero as a function of $o$, so
+$\nabla_o \ell_\delta = 0$. Otherwise $K_\delta \supsetneq \{y\}$. Writing $\tilde p$ for the
+softmax restricted to $K_\delta$, $\ell_\delta = -\log \tilde p_y > 0$ and
+$\partial \ell_\delta / \partial o_y = \tilde p_y - 1 \ne 0$. Finally,
+$p_y - p_{j^\star} = -g < \delta$, so $j^\star \in K_\delta$. \hfill$\square$
+
+\paragraph{\Cref{cor:selection}.}
+$\delta = -1$ gives $-g \ge -1 = \delta$ for every sample, so by \cref{prop:zero} the loss and
+gradient vanish. $\delta = 1$ keeps every $j$ with $p_j > p_y - 1$, which is every class unless
+$p_y = 1$ exactly, so $\ell_1$ is cross-entropy. The batch mean then averages over all $B$ samples
+rather than the kept ones, a constant factor per batch. \hfill$\square$
+
+\paragraph{\Cref{prop:reject}.}
+Write $u = \dbase - \beta(2s - 1)$, so $\delta = \min(\max(u, -1), \dceil)$. By
+\cref{prop:zero} the loss vanishes iff $\delta \le -g$. A minimum is $\le -g$ iff one of its
+arguments is: either $\dceil \le -g$ (fitted), or $\max(u, -1) \le -g$. Since $g < 1$ we have
+$-1 < -g$, so the latter holds iff $u \le -g$, i.e.\ $\beta(2s - 1) \ge \dbase + g$. For the
+escape region, $2s - 1 < 1$ gives $\beta(2s - 1) < \beta \le \dbase + g$ whenever
+$g \ge \beta - \dbase$. Such a sample is not fitted either, since $g > 0 \ge -\dceil$ (for
+$\beta > \dbase \ge 0$). By \cref{prop:zero} it then trains against $j^\star$. For the absolute
+statistic and $g > g_{\mathrm{hi}}$, $\delta \to \dbase - \beta = -0.85$, and the only class
+that can satisfy $p_j > p_y + 0.85$ is $j^\star$, so $K_\delta = \{y, j^\star\}$. \hfill$\square$
+
+\paragraph{\Cref{prop:blind}.}
+The batch mean and standard deviation of $a p + b$ are $a\bar p + b$ and $a\,\mathrm{sd}(p)$, so
+every $z_i$ and hence every $s_i = h(z_i)$ is unchanged. The empirical distribution of $z$ has mean
+0 and variance 1, and Cantelli's inequality bounds the fraction with $z \ge k$ by $1/(1+k^2)$.
+For increasing $h$, $s_i \ge h(k) \iff z_i \ge k$. \hfill$\square$
+
+\paragraph{\Cref{cor:band}.}
+With $s = \sigma(g/\tau)$, $2\sigma(x) - 1 = \tanh(x/2)$. By \cref{prop:reject} a sample with
+$g > 0$ is rejected iff $f(g) = \beta\tanh(g/2\tau) - g - \dbase \ge 0$. On $g \ge 0$, $\tanh$ is
+concave, so $f$ is concave and its superlevel set $\{f \ge 0\}$ is an interval, possibly empty. The
+endpoints quoted in the text are computed on a grid of $2\times10^5$ points
+(\texttt{AbsoluteGapMargin.rejection\_band}). \texttt{tests/test\_mechanism.py} checks that the
+implemented loss has zero gradient exactly on this set, and positive gradient elsewhere, for
+$\tau \in \{0.1, 0.3\}$. \hfill$\square$
+
+\section{The loss-mixture statistic}
+\label{app:mixture}
+
+The loss-mixture statistic keeps a per-sample exponential moving average (momentum 0.5) of
+$-\log p_y$ over the steps at which each training example is seen. Every 100 steps, once half the
+training set has been seen, it fits one- and two-component Gaussian mixtures (20 EM iterations) to
+the \emph{log} of these averages. The mixture is \emph{active} only if BIC prefers two components
+and the high component's mean loss is at least $\log C$, the loss of a uniform prediction. When
+inactive, $s_i = 1/2$ for every sample and the loss is exactly AS-Softmax. When active, $s_i$ is
+the posterior of the high-loss component, and that component's weight is logged as an estimate of
+the noise rate. This is the selection statistic of DivideMix \citep{li2020dividemix} expressed as a
+margin.
+
+\paragraph{Design iteration before launch.}
+The first design fitted raw losses and gated on BIC alone. A diagnostic on the training set with
+ground-truth flip labels (one CE epoch at 40\% symmetric noise; no test accuracy involved) showed
+two problems. Raw-loss fits over-estimated the rate (0.59 at a true 0.40, precision 0.67), while log
+fits gave 0.39--0.40 with precision 0.82--0.87 and AUC 0.94--0.96. And on \emph{clean} data BIC
+still preferred two components, with weight 0.44--0.52, because not-yet-fitted clean samples form
+a second mode. A rejected sample is never fitted, so that error would lock in. The two modes differ
+in location: mislabeled samples sat at a loss of about 3.5, above $\log 20 \approx 3.0$, while the
+unfitted clean mode was at 1.5 and falling. The chance-level anchor follows from that and is not a
+tuned threshold. In the main runs the mixture estimated the rate at $0.35 \pm 0.01$ (true 0.40) yet
+trained worse than the absolute rule (\cref{tab:main}).
+
+\section{Pre-registration record and earlier phases}
+\label{app:prereg}
+
+The plan document and every decision rule live in the repository, timestamped by its version
+history. The negative-margin idea came out of an earlier, failed project on class-pair-structured
+margins for AS-Softmax. There, one two-seed run at 40\% symmetric noise first showed the
+batch-relative margin memorizing about a quarter as many corrupted labels as CE. Phase~A was
+pre-registered to re-test that result on five seeds before anything was built on it.
+\Cref{tab:phases} lists every phase and \cref{tab:phaseab} the 4-epoch results of Phases A--B$'$.
+
+\begin{table}[h]
+\centering
+\caption{Phases, the decision fixed before each, and the outcome.}
+\label{tab:phases}
+\small
+\begin{tabular}{p{0.13\linewidth}p{0.42\linewidth}p{0.37\linewidth}}
+\toprule
+phase & fixed in advance & outcome \\
+\midrule
+A & 5 seeds, 4 epochs, final epoch: M4 must memorize less than CE on every seed and beat it by
+$> 2$ sd; else stop & pass: $+1.81$ ($t = 4.4$), memorization 17\% vs.\ 35\% \\
+B & M4 $\ge$ small-loss $- 0.5$ and $\ge \max$(GCE, SCE) & fail: GCE / small-loss / SCE all
+$+1.7$ to $+2.3$ ahead \\
+B$'$ & two named confounds (rejection timing; AS vs.\ CE base); one variant each; stop if the
+better is $> 1$ pt below small-loss & timing fixed: 67.41 vs.\ 67.80 (tie); CE base: 63.29 \\
+C & noise types and rates, $\beta$ sweep, 8 epochs, noisy-held-out selection & best at sym 40\%;
+fails clean ($-3.8$) and pair 40\% ($-4.6$); noise-blindness diagnosed \\
+C$'$ & two self-calibrating statistics, P1--P4 (\cref{tab:verdicts}); P3 failure $\Rightarrow$
+reframing write-up, no CIFAR-N & P3 fails for both; P4 passes for the absolute gap \\
+E & instrumented re-runs (3 seeds, no new method or setting) for \cref{sec:mechanism} &
+\TODO{fill} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Phases A--B$'$: 40\% symmetric noise, 4 epochs, clean-test selection (\emph{best}) and
+last epoch (\emph{final}), 5 seeds. ``M4, delayed'' is the original schedule (rejection off for
+the first 30\% of training, full strength only at the end); ``M4, matched'' uses small-loss's
+schedule; ``M4, CE base'' makes the same rejection decisions as ``matched'' but trains kept
+samples with CE.}
+\label{tab:phaseab}
+\small
+\begin{tabular}{lccc}
+\toprule
+method & best & final & mem @final (\%) \\
+\midrule
+CE                  & 67.46\sd{0.48} & 63.84\sd{0.50} & 34.7 \\
+AS-Softmax          & 67.70\sd{0.60} & 64.32\sd{0.40} & 39.4 \\
+GCE                 & 68.28\sd{0.22} & 67.90\sd{0.53} & 9.3 \\
+SCE                 & 68.18\sd{0.87} & 67.38\sd{0.54} & 9.1 \\
+small-loss (oracle) & 68.09\sd{0.24} & 67.80\sd{0.27} & 12.4 \\
+M4, delayed         & 67.94\sd{0.34} & 65.65\sd{0.91} & 17.2 \\
+M4, $\beta = 0.5$, delayed & 67.89\sd{0.42} & 64.68\sd{0.47} & 34.5 \\
+M4, matched         & 68.05\sd{0.53} & 67.41\sd{0.60} & 8.1 \\
+M4, CE base         & 65.29\sd{0.82} & 63.29\sd{0.95} & 12.4 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Reproducibility}
+\label{app:repro}
+
+Every run is one command, \texttt{python experiments/run.py --config <yaml>}, with the seed, noise
+rate and noise type as overrides. The configurations are in \texttt{configs/phase\_c/} (Phases C,
+C$'$) and \texttt{configs/final/} (Phases A--B$'$). The drivers \texttt{experiments/phase\_c.py} and
+\texttt{experiments/mechanism.py} run the sweeps and rebuild the summary tables. Figures come from
+\texttt{experiments/make\_paper\_figures.py}. The 115 unit tests (\texttt{python -m pytest tests/})
+include the closed-form checks of \cref{sec:theory}. Hardware: one RTX 3080~Ti (12\,GB), about
+11 minutes per 8-epoch run.

@@ -1,0 +1,72 @@
+\section{Experimental protocol}
+\label{sec:setup}
+
+\paragraph{Pre-registration.}
+The study ran in phases. Before each phase we wrote down its hypotheses, numeric pass criteria and
+the decision each outcome would trigger, in a dated plan kept in the repository history
+(\cref{app:prereg}). Phase~A replicated an earlier two-seed result on five seeds. Phase~B compared
+against GCE, SCE and small-loss selection; it failed as specified. Phase~B$'$ removed two
+confounds named before it ran, and Phase~C added noise types, noise rates, the strength sweep and
+the realistic selection protocol. Phase~C$'$ tested the two self-calibrating statistics. Its rule
+read: if neither passes at its home condition, 40\% symmetric noise, write the result up as a
+reframing and do not proceed to the planned real-noise benchmark. That is what happened, and this
+paper is the write-up. No method or hyperparameter was changed after its test results were seen.
+One design change was made before launch on a training-set diagnostic that involved no test
+accuracy (\cref{app:mixture}).
+
+\paragraph{Data and noise.}
+20~Newsgroups \citep{lang1995newsweeder} with headers, footers and quotes removed, and empty
+documents dropped: 11{,}014 training and 7{,}317 test documents in 20 classes. We hold out 10\% of
+the training set (1{,}101 documents) \emph{with its noisy labels} as the model-selection set and
+train on the remaining 9{,}913. Test labels are never corrupted. \emph{Symmetric} noise at rate
+$\eta$ replaces each training label, independently with probability $\eta$, by a class drawn
+uniformly from the 19 others. \emph{Pair-flip} noise \citep{han2018coteaching} replaces it by
+$(y + 1) \bmod 20$, a systematic confusion the model can learn as a pattern. Conditions: symmetric
+$\eta \in \{0, 0.2, 0.4, 0.6\}$ and pair-flip $\eta \in \{0.2, 0.4\}$. The corruption is drawn once
+per condition and shared by every method and seed.
+
+\paragraph{Model and training.}
+\texttt{bert-base-uncased} \citep{devlin2019bert} with mean pooling and a linear head, inputs
+truncated to 128 tokens, dropout 0.1. AdamW \citep{loshchilov2019adamw} at a constant learning
+rate of $2\times10^{-5}$, weight decay 0.01, batch size 16, gradient clipping at 1.0, 8 epochs
+(4{,}960 steps), full precision. Seeds 42--46 vary the head's initialization, dropout and batch
+order.
+
+\paragraph{Model selection and metrics.}
+Each run reports three test accuracies: \textbf{sel}, at the epoch with the highest accuracy on the
+noisy held-out labels (earliest on ties), our headline; \textbf{final}, at the last epoch, which is
+what training without any validation set yields; and \textbf{best}, at the epoch with the highest
+\emph{clean test} accuracy, an oracle upper bound reported only for completeness.
+\textbf{Memorization} is measured on a fixed probe of 1{,}200 training examples, shared by all
+methods. Of the probe's corrupted examples (477 at 40\% symmetric noise), it is the fraction the
+model predicts as its corrupted label at the last epoch.
+
+\paragraph{Methods.}
+\begin{itemize}
+  \item \textbf{CE}: cross-entropy.
+  \item \textbf{GCE} \citep{zhang2018gce}: $q = 0.7$; $q = 0.4$ in the tuning grid.
+  \item \textbf{SCE} \citep{wang2019sce}: $(\alpha, \beta) = (0.1, 1)$, $A = -4$; $(1, 1)$ in the grid.
+  \item \textbf{Small-loss}: single-network small-loss selection, i.e.\ Co-teaching's selection
+  rule without the second network \citep{han2018coteaching}. The forget rate ramps linearly to $r$
+  over the first 30\% of training, with $r = \eta$ (the \emph{true} noise rate, an oracle) and
+  $r = \eta/2$ in the grid.
+  \item \textbf{AS-Softmax} \citep{lv2023assoftmax}: $\delta = 0.15$ with a 10\% linear warm-up.
+  \item \textbf{M4 (batch-relative)}: \cref{def:family} with the batch z-score, $T = 1$,
+  $\beta \in \{0.25, 0.5, 1\}$ ($\beta = 1$ unless stated).
+  \item \textbf{M4 absolute gap}: $\tau = 0.1$, $\beta = 1$; $\tau = 0.3$ as the one pre-registered
+  scale alternative.
+  \item \textbf{M4 loss mixture}: \cref{app:mixture}.
+\end{itemize}
+Every suspicion margin uses $\dbase = \dceil = 0.15$, floor $-1$, and the 0~$\to$~30\% ramp of
+$\beta$. The ramp matches small-loss's schedule, a confound identified and removed in Phase~B$'$.
+Baselines received the tuning grid above, evaluated with noisy-held-out selection at 40\%
+symmetric noise. The grid changed GCE and SCE by less than 0.15 points. For small-loss,
+$r = \eta/2$ scored higher than the oracle rate (66.75 vs.\ 65.61, $t = 1.2$, \cref{tab:main}).
+The grid ran only at 40\% symmetric noise, so the multi-condition comparisons use the default
+settings listed first.
+
+\paragraph{Statistics.}
+We report mean $\pm$ standard deviation over the five seeds, and paired differences between
+methods over the same seeds with the paired $t$ statistic (4 degrees of freedom; $|t| > 2.78$
+corresponds to $p < 0.05$, two-sided). With five seeds we call a difference \emph{established} only
+past that threshold. A run takes about 11 minutes on one RTX 3080~Ti; the study used about 280.

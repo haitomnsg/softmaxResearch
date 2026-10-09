@@ -1,0 +1,59 @@
+% Phase E draft (docs/10_noisy_label_plan.md). Target: TMLR or a workshop (the
+% pre-registered Phase C' rule sent this to a "reframing" write-up).
+% Plain article class so it builds anywhere; swap in tmlr.sty / the workshop
+% style at submission time. Build: see README.md in this folder.
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[round]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\usepackage[capitalize,noabbrev]{cleveref}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\newtheorem{observation}{Observation}
+
+\newcommand{\TODO}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\clip}{\operatorname{clip}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\dbase}{\delta_{\mathrm{b}}}
+\newcommand{\dceil}{\delta_{\mathrm{c}}}
+\newcommand{\sd}[1]{\ensuremath{{\scriptstyle\pm#1}}}
+
+\title{When the Margin Goes Negative:\\
+Sample Rejection as a Masked-Softmax Margin under Label Noise}
+% Double-blind venues: keep anonymous until camera-ready.
+\author{Anonymous authors}
+\date{Draft, \today}
+
+\begin{document}
+\maketitle
+
+\input{sections/00_abstract}
+\input{sections/01_introduction}
+\input{sections/02_background}
+\input{sections/03_theory}
+\input{sections/04_setup}
+\input{sections/05_results}
+\input{sections/06_discussion}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\appendix
+\input{sections/appendix}
+
+\end{document}

@@ -1,0 +1,54 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{What the margin view buys.}
+Writing rejection as a margin did not produce a method that beats GCE on symmetric noise. It did
+make three properties of selection rules visible before any training run, and each was then
+measured. First, \emph{relative} statistics carry a hidden rate. A z-score, a rank or a fixed
+budget rejects the same share of a clean batch as of a corrupted one (\cref{prop:blind}). That
+is why the batch-relative margin wins exactly at one noise level and why small-loss needs the
+oracle rate. Second, an \emph{absolute} statistic turns the rejection threshold into a constant of
+the loss, a band of label gaps (\cref{cor:band}). The rejected share then follows the data,
+including structured noise, where rate-based selection has no reason to pick the right samples.
+Third, any margin family with a floor has an \emph{escape region} (\cref{prop:reject}). It
+explains the threshold-shaped strength sweep and the failure of the wider-temperature variant.
+It also identifies a defect of our recipe: the most confidently contradicted labels receive a
+near-maximal gradient toward the wrong class. The remedy is $\beta \ge 1 + \dbase$, which makes
+the band reach $g = 1$; with $\beta = 1.15$, $\tau = 0.1$ it becomes $[0.032, 1.0)$. We did not
+run it, because the pre-registered protocol froze $\beta$ before Phase~C$'$, and we leave it as a
+stated prediction.
+
+\paragraph{When to reject and when to down-weight.}
+The absolute rule discards every sample the model currently disagrees with. Under symmetric noise
+many of those are hard but correct, and GCE, which only down-weights them, is 0.9--1.3 points
+better. Under pair-flip noise, disagreement is the better signal. A fixed wrong class is learned
+as a pattern, so mislabeled samples do not stand out by loss rank (small-loss memorizes half of
+them). They appear to stand out by disagreement before the pattern is learned (the absolute rule
+memorizes a quarter).
+The same contrast appears without model selection. The heavier or more structured the noise, the
+larger the absolute rule's last-epoch lead over GCE: $+5.1$ at 60\% symmetric and $+7.1$ at 40\%
+pair-flip.
+
+\paragraph{Limitations.}
+One dataset, one model, one modality, and synthetic noise only. The real-noise benchmark was cut
+by our own pre-registered rule, so the claims above are about 20~Newsgroups with injected noise.
+Five seeds resolve differences of about one point at best: several comparisons we describe
+($+4.9$ over GCE under pair-flip, $-0.95$ at 40\% symmetric) are not established at $p < 0.05$.
+Small-loss is the single-network rule, not Co-teaching's two networks, and DivideMix-style
+semi-supervised pipelines are out of scope, since they are training procedures rather than losses.
+The baselines' tuning grid ran only at 40\% symmetric noise. Training was fixed at 8 epochs with a
+constant learning rate. The suspicion margins inherit AS-Softmax's base margin, which we showed
+memorizes faster than CE on its own.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+In masked softmax, a sample's loss vanishes exactly when its label gap reaches the negative of its
+margin. A negative margin is therefore sample rejection, and the choice of selection rule becomes
+the choice of a margin function. The view makes falsifiable predictions, and they held in a
+pre-registered study. Relative statistics are noise-blind. An absolute ``another class beats the
+label'' statistic rejects a fixed, rate-free band of gaps, memorizes the fewest corrupted labels and
+is the most robust rule under structured noise. A margin floor leaves an escape region that
+shapes how the rule responds to its strength. The absolute rule did not clear our bar against GCE
+on clean and symmetric noise, and we report it as a unifying account with measured consequences,
+not as a new state of the art.

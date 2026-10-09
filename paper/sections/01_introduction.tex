@@ -1,0 +1,68 @@
+\section{Introduction}
+\label{sec:intro}
+
+Deep networks fit corrupted labels as readily as clean ones \citep{zhang2017understanding}, but
+they fit the clean ones first \citep{arpit2017closer,liu2020elr}. Two families of methods exploit
+this gap. \emph{Robust losses} such as MAE \citep{ghosh2017robust}, GCE \citep{zhang2018gce} and
+SCE \citep{wang2019sce} bound the influence any single example can have on training. \emph{Sample selection} methods
+such as MentorNet \citep{jiang2018mentornet}, Co-teaching \citep{han2018coteaching} and DivideMix
+\citep{li2020dividemix} drop the examples the model currently fits worst, the \emph{small-loss} trick.
+Selection is usually a procedure bolted onto the loss: rank the batch by loss, keep a fraction
+$1-r$, and set $r$ from an estimate of the noise rate, often its true value.
+
+This paper starts from an observation about a different line of work. AS-Softmax \citep{lv2023assoftmax}
+trains with cross-entropy over a \emph{masked} softmax: a competing class $j$ is dropped from the
+normalizer once the label beats it by a margin $\delta$ in probability, $p_y - p_j \ge \delta$. When
+every competitor is dropped, the sample's loss and gradient are exactly zero. AS-Softmax uses
+$\delta > 0$, so this happens only for samples the model already fits. Nothing in the mechanism
+requires $\delta > 0$, however. With $\delta < 0$ the same zero-loss region extends to samples
+whose label is \emph{losing}, by up to $|\delta|$. A negative margin is therefore sample
+rejection (\cref{prop:zero}), and any selection rule, small-loss included, can be written as a
+per-sample margin function (\cref{cor:selection}).
+
+The equivalence is simple, and its value lies in what it makes measurable. Once selection is a
+margin $\delta_i = \dbase - \beta\,(2 s_i - 1)$ driven by a per-sample suspicion statistic $s_i$,
+the statistic is the design choice and the margin's geometry predicts behavior before any training:
+\begin{itemize}
+  \item A \textbf{batch-relative} statistic, such as a z-score of $p_y$ within the batch, is invariant
+  to the batch's overall level of fit (\cref{prop:blind}). The fraction it flags cannot follow the
+  noise rate. The method then rejects about as much on clean data as on noisy data, and the
+  strength $\beta$ acts as a hidden, fixed rejection rate.
+  \item An \textbf{absolute} statistic, $s_i = \sigma(g_i/\tau)$ with the label gap
+  $g = \max_{j\ne y} p_j - p_y$, rejects a closed-form interval of gaps $[g_{\mathrm{lo}}, g_{\mathrm{hi}}]$
+  that depends only on $(\beta,\tau,\dbase)$ (\cref{cor:band}). Nothing in it estimates or
+  presumes the noise rate.
+  \item Because the margin cannot fall below $\dbase - \beta$, \textbf{no} statistic can reject a
+  sample whose label is contradicted by more than $\beta - \dbase$ (\cref{prop:reject}). Such
+  samples are trained on against their leading class at full strength, and the same cap explains
+  why memorization responds to $\beta$ as a threshold rather than smoothly.
+\end{itemize}
+
+We test these predictions in a study whose hypotheses, pass criteria and decision rules were
+written down before each phase was run (\cref{sec:setup}). The study fine-tunes BERT-base
+\citep{devlin2019bert} on 20~Newsgroups \citep{lang1995newsweeder}. It covers symmetric noise at
+0--60\% and pair-flip noise at 20 and 40\%, uses five seeds, and selects the model on held-out
+\emph{noisy} labels, since a clean validation set is exactly what a practitioner facing label
+noise lacks. The predictions hold. The batch-relative margin has the highest mean accuracy of
+fourteen methods at the one condition its fixed strength happens to suit, 40\% symmetric noise (a
+statistical tie with GCE). It costs 3.8 points on
+clean data and fails under pair-flip noise. The absolute margin removes most of the clean-data
+cost, memorizes the fewest corrupted labels in four of five noisy conditions and is the most
+accurate method under 40\% pair-flip noise. It does \emph{not} match GCE on clean or symmetric
+noise, and by our own pre-registered criterion it is not a new state-of-the-art method.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item An exact equivalence between per-sample margins in masked softmax and sample rejection.
+  Small-loss selection, disagreement filtering and AS-Softmax's own sparsity then become points in
+  one family of margin functions (\cref{sec:theory}).
+  \item Three consequences of the margin geometry: the noise-blindness of batch-relative
+  statistics, the rate-free rejection band of the absolute statistic, and an escape region above
+  $\beta - \dbase$. Each is verified against the implementation in unit tests.
+  \item A pre-registered evaluation with five seeds, a realistic model-selection protocol and a
+  tuning grid for the baselines. It reports every pre-registered comparison, including the ones the
+  proposed rule loses (\cref{sec:results}).
+  \item Two negative findings: AS-Softmax memorizes corrupted labels \emph{faster} than
+  cross-entropy, and estimating the noise rate with a loss mixture, then rejecting, does worse
+  here than rejecting disagreement directly.
+\end{enumerate}

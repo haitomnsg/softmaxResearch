@@ -1,0 +1,22 @@
+\begin{abstract}
+Small-loss sample selection, the core heuristic of learning with noisy labels, stops training on
+examples the model currently fits poorly. We show that in the masked-softmax family of AS-Softmax
+this heuristic is a margin. A sample's loss and gradient vanish exactly when its label gap
+$g = \max_{j\neq y} p_j - p_y$ satisfies $g \le -\delta$, so a \emph{negative} per-sample margin
+$\delta$ rejects the sample, and every selection rule is a choice of margin function. The view
+turns the rule's suspicion statistic into the object of design and yields testable predictions.
+A batch-relative statistic is invariant to the batch's overall fit, so the share it rejects cannot
+follow the noise rate. An absolute statistic (``another class beats the label'') rejects a
+closed-form band of gaps that does not depend on the noise rate, and leaves an escape region of
+confidently contradicted labels that no margin in the family can reject. We test these predictions
+in a pre-registered study: BERT-base on 20~Newsgroups, six synthetic noise conditions, five seeds,
+model selection on noisy held-out labels. The batch-relative margin ties the best robust loss at
+40\% symmetric noise but loses 3.8 points on clean data and 4.6 under pair-flip noise, as its
+noise-blindness predicts. The absolute margin memorizes the fewest corrupted labels in four of the
+five noisy conditions (8--10\% under symmetric noise, against 13--29\% for small-loss selection
+given the true noise rate) and is the best method under 40\% pair-flip noise (+5.4 points over
+cross-entropy, +3.3 over oracle small-loss). It still trails GCE by 0.9--1.3 points on clean and symmetric noise, so
+it fails our pre-registered bar for a new method. We also find that AS-Softmax, the base loss,
+memorizes corrupted labels faster than cross-entropy. We report the result as a unifying view with
+measured consequences, not as a state-of-the-art method.
+\end{abstract}

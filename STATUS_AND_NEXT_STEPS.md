@@ -1,6 +1,6 @@
 # Where We Are & What To Do Next (plain-English version)
 
-*Last updated: 2026-10-05. This is the simple companion to `README.md` and `docs/`.
+*Last updated: 2026-10-09. This is the simple companion to `README.md` and `docs/`.
 No math required to read it.*
 
 ---
@@ -31,9 +31,14 @@ competing methods, and real-world noisy data (CIFAR-10N/100N).
 - **Phase C′ done (2026-10-09):** two ways of letting the data decide how much to throw away were tested against rules written down first.
   The simple one ("drop an example when the model already prefers a different class than its label") is the **best method of all when
   the wrong labels follow a pattern** (+5 points over plain training, +3 over the standard trick) and memorizes the fewest wrong
-  labels at every noise level (8–10%). But it still costs **1.5 points on clean data** and about 1 point against the best standard
+  labels in 4 of the 5 noisy settings (8–10% on random noise). But it still costs **1.5 points on clean data** and about 1 point against the best standard
   loss (GCE) on random noise, so it misses the pass bar we set. The fancier one (estimate the noise rate from the loss distribution)
   estimates the rate well (35% for a true 40%) but trains worse. **By the pre-set rule the next step is the write-up, not CIFAR-N.**
+- **Write-up started (2026-10-09):** the paper draft is in `paper/`. Its main idea: "ignore this example" and "this example is
+  already learned" are the same thing inside the loss, so every rule for dropping suspicious examples is a choice of gap. That
+  view predicted, before any run, why each version worked where it did and failed where it did. It also found a flaw: the
+  examples whose labels are *most obviously* wrong can never be dropped. A last batch of instrumented runs (~8 h) measures
+  where each method spends its learning effort; its numbers go into the paper when they finish.
 - **If gate A fails, we stop again** and write up why. The plan states its kill criteria in advance.
 
 ```
