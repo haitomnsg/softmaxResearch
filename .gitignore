@@ -47,3 +47,14 @@ presentation/latex/*.out
 presentation/latex/*.snm
 presentation/latex/*.toc
 presentation/latex/*.vrb
+
+# paper/ LaTeX intermediates (main.pdf IS committed)
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.bbl
+paper/*.blg
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+paper/*.toc

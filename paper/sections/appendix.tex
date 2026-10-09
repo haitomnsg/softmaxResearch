@@ -132,10 +132,15 @@ M4, CE base         & 65.29\sd{0.82} & 63.29\sd{0.95} & 12.4 \\
 \section{Reproducibility}
 \label{app:repro}
 
-Every run is one command, \texttt{python experiments/run.py --config <yaml>}, with the seed, noise
-rate and noise type as overrides. The configurations are in \texttt{configs/phase\_c/} (Phases C,
-C$'$) and \texttt{configs/final/} (Phases A--B$'$). The drivers \texttt{experiments/phase\_c.py} and
-\texttt{experiments/mechanism.py} run the sweeps and rebuild the summary tables. Figures come from
-\texttt{experiments/make\_paper\_figures.py}. The 115 unit tests (\texttt{python -m pytest tests/})
-include the closed-form checks of \cref{sec:theory}. Hardware: one RTX 3080~Ti (12\,GB), about
-11 minutes per 8-epoch run.
+Every run is one command, \texttt{python experiments/run.py -{}-config <yaml>}, with the seed,
+noise rate and noise type as overrides.
+\begin{itemize}
+  \item Configurations: \path{configs/phase_c/} (Phases C, C$'$) and \path{configs/final/}
+  (Phases A--B$'$).
+  \item Sweep drivers: \path{experiments/phase_c.py} and \path{experiments/mechanism.py}. Both
+  also rebuild the summary tables.
+  \item Figures: \path{experiments/make_paper_figures.py}.
+  \item Tests: \texttt{python -m pytest tests/} (115 unit tests, including the closed-form checks
+  of \cref{sec:theory}).
+\end{itemize}
+Hardware: one RTX 3080~Ti (12\,GB), about 11 minutes per 8-epoch run.

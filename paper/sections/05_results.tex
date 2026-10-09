@@ -11,6 +11,7 @@ accuracy at the epoch chosen on noisy held-out labels (headline). \textbf{final}
 predicted as given at the last epoch. $\Delta$CE: paired sel difference to cross-entropy, with $t$.}
 \label{tab:main}
 \small
+\renewcommand{\arraystretch}{0.95}
 \begin{tabular}{llccccc}
 \toprule
 & method & sel & final & best (oracle) & mem & $\Delta$CE sel ($t$) \\
@@ -146,8 +147,8 @@ but correctly labeled samples, and on easy regimes GCE's soft down-weighting is 
 
 \emph{Without a validation set, the absolute margin's advantage grows with the noise.} At the last
 epoch its difference to GCE goes from $-2.1$ (clean) and $-1.3$ (20\%) to $+0.4$ (40\%),
-$+5.1$ (60\%, $t = 9.7$, 5/5 seeds) and $+7.1$ (pair 40\%, $t = 3.1$). Under symmetric noise it
-loses at most 0.9 points between the selected and the last epoch, where GCE loses up to 7.3,
+$+5.1$ (60\%, $t = 9.7$, 5/5 seeds) and $+7.1$ (pair 40\%, $t = 3.1$). Under symmetric noise the
+absolute margin loses at most 0.9 points between the selected and the last epoch (GCE: up to 7.3),
 because it keeps refusing to fit what it disagrees with. Under pair-flip noise both decay more
 (absolute gap 6.3, GCE 8.4 points at 40\%).
 
