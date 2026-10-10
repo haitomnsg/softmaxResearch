@@ -212,11 +212,48 @@ noise-robust than cross-entropy. As a base for rejection it is nonetheless the b
 Phase~B$'$ control with identical rejection decisions, training the kept samples with CE instead of
 AS-Softmax cost 4.1 points (63.3 vs.\ 67.4, 4 epochs, \cref{app:prereg}). We have not isolated why.
 
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig5_mechanism.pdf}
+  \caption{Mechanism, read every epoch on the training probe (mean of 3 seeds). (a)~Fraction of
+  mislabeled samples that are rejected: zero gradient although another class beats the label. At
+  epoch 1 the absolute rule rejects nothing, because $\beta$ has only ramped to 0.42 and its band
+  (\cref{cor:band}) is still empty. (b)~Share of the probe's gradient carried by mislabeled
+  samples. AS-Softmax exceeds CE until its mislabeled samples are memorized and count as fitted.
+  (c)~With no noise at all, the rejection rules lock clean samples out of training.}
+  \label{fig:mechanism}
+\end{figure}
+
 \paragraph{Where the gradient goes.}
-\TODO{Fill from \texttt{runs/mechanism/summary.md} once the 42 instrumented runs finish (3 seeds;
-the instrumentation reproduces Phase~C's accuracies exactly). Report, at the last epoch of 40\%
-symmetric noise: the share of gradient carried by mislabeled probe samples for CE / AS / M4 /
-absolute gap / small-loss / GCE; the fraction of mislabeled samples rejected (zero gradient with
-$g > 0$); the fraction of clean samples with zero gradient at 0\% noise for M4 vs.\ absolute gap
-(the clean-cost mechanism of \cref{prop:blind}); and the share of the mislabeled samples' gradient
-in the escape region $g \ge 0.8$ (\cref{prop:reject}). Insert \texttt{fig5\_mechanism.pdf}.}
+We re-ran six methods at 40\% symmetric noise, three without noise and five at 40\% pair-flip, on
+three seeds, recording each probe sample's gap and logit gradient every epoch
+(\cref{fig:mechanism}). The instrumentation reads the logits only, and the re-runs reproduce the
+Phase~C accuracies exactly. Four findings stand out.
+
+\emph{AS-Softmax's faster memorization follows its gradient share.} At epochs 1--4 the share of
+AS-Softmax's gradient carried by mislabeled samples exceeds CE's by 8.5, 11.6, 13.7 and 11.8 points
+(3/3 seeds, $t \ge 11$). This is the period in which its memorization pulls ahead. Once the
+mislabeled samples are memorized, AS-Softmax counts them as fitted and stops pushing on them, and
+from epoch 6 its share falls below CE's (by 13 to 29 points). This is \cref{obs:as} in its
+precise form.
+
+\emph{The rejection margins reject the right samples, at different rates.} From epoch 2 on, the
+absolute rule gives zero gradient to 89--93\% of the mislabeled probe samples, the batch-relative
+rule to 78--85\%, and small-loss given the true rate to 72--83\%. Under 40\% pair-flip noise the
+gaps widen: 73--81\%, 32--36\% and 48--64\%. The batch-relative rule rejects only a third of the
+pair-flipped labels, which is the mechanism behind its pair-flip failure.
+
+\emph{The clean-data cost is a lockout.} Without any noise, the batch-relative rule rejects 14\%
+of the (correctly labeled) training samples after one epoch and 23\% at the end. Its training
+accuracy stays between 76 and 79\% for all eight epochs, against 99.7\% for CE. A rejected sample
+receives no gradient, so nothing moves it back into the trained region. The absolute rule locks
+out 13--15\% and reaches 86\% training accuracy, in line with its smaller clean-data cost (1.5
+vs.\ 3.8 points).
+
+\emph{The escape region is sparsely populated but expensive.} Under the absolute rule, at most 6\%
+of mislabeled probe samples ever reach $g \ge 0.8$ (4\% under pair-flip noise), because models
+built on AS-Softmax stay unconfident. Under GCE and small-loss, 57--75\% do. Yet nearly every other
+sample has zero gradient, so those few carry 10--35\% (mean 20\%) of the probe's entire gradient at
+epochs 4--8, all of it pushing toward the wrong label; the variation across seeds is large. The
+untested remedy $\beta \ge 1 + \dbase$ (\cref{sec:discussion}) would remove exactly this
+gradient.

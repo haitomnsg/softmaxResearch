@@ -39,7 +39,11 @@ what training without any validation set yields; and \textbf{best}, at the epoch
 \emph{clean test} accuracy, an oracle upper bound reported only for completeness.
 \textbf{Memorization} is measured on a fixed probe of 1{,}200 training examples, shared by all
 methods. Of the probe's corrupted examples (477 at 40\% symmetric noise), it is the fraction the
-model predicts as its corrupted label at the last epoch.
+model predicts as its corrupted label at the last epoch. For the mechanism analysis
+(\cref{sec:mechanism}) the probe also records, every epoch, each sample's gap $g$ and the
+$\ell_1$-norm of its logit gradient under the method's own loss. That costs one autograd call on
+detached logits, with no backward pass through the model and no random draws, so training is
+unchanged.
 
 \paragraph{Methods.}
 \begin{itemize}

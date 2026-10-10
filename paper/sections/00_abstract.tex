@@ -16,7 +16,9 @@ noise-blindness predicts. The absolute margin memorizes the fewest corrupted lab
 five noisy conditions (8--10\% under symmetric noise, against 13--29\% for small-loss selection
 given the true noise rate) and is the best method under 40\% pair-flip noise (+5.4 points over
 cross-entropy, +3.3 over oracle small-loss). It still trails GCE by 0.9--1.3 points on clean and symmetric noise, so
-it fails our pre-registered bar for a new method. We also find that AS-Softmax, the base loss,
-memorizes corrupted labels faster than cross-entropy. We report the result as a unifying view with
-measured consequences, not as a state-of-the-art method.
+it fails our pre-registered bar for a new method. Instrumented re-runs locate the costs. A rejected
+clean sample receives no gradient and stays locked out (23\% of a noise-free training set under the
+batch-relative margin). AS-Softmax, the base loss, initially concentrates its gradient on
+mislabeled samples and memorizes them faster than cross-entropy. We report the result as a unifying
+view with measured consequences, not as a state-of-the-art method.
 \end{abstract}

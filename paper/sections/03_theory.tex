@@ -110,7 +110,8 @@ measures \emph{relative} fit only. It flags roughly the lower half of every batc
 that half is rejected is set by $\beta$ through \cref{prop:reject}, not by the data. The method
 therefore carries a fixed rejection rate that nobody chose explicitly. It suits one noise level
 and over- or under-rejects everywhere else. On clean data it discards correctly labeled samples
-that are merely below average (\cref{sec:results}). Small-loss selection has the same
+that are merely below average. A rejected sample then receives no gradient and stays rejected,
+a lockout we measure in \cref{sec:mechanism}. Small-loss selection has the same
 blindness by construction. There the rate is an explicit input $r$, typically set to the true
 noise rate, which is information the method should not need.
 
@@ -144,9 +145,10 @@ Cross-entropy gives every sample a logit gradient of $\ell_1$-norm $2(1 - p_y) >
 gives exactly zero to every fitted sample, $g \le -\dbase$. As clean samples become fitted, a larger
 share of each update comes from the samples that are not, and once early learning is over most of
 those carry wrong labels. Adam's per-coordinate normalization \citep{kingma2015adam,loshchilov2019adamw} makes
-the step size largely insensitive to the overall gradient scale. We therefore expect AS-Softmax to
-memorize corrupted labels faster than cross-entropy in mid-training, with both saturating
-eventually.
+the step size largely insensitive to the overall gradient scale. We therefore expect a larger
+gradient share on mislabeled samples, and faster memorization, while they are still unfitted.
+Once they are memorized, AS-Softmax counts them as fitted too and the effect reverses, with both
+losses eventually saturating.
 \end{observation}
 
 The observation is a prediction, not a theorem. \Cref{sec:mechanism} measures both the

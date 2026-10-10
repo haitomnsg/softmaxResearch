@@ -165,35 +165,44 @@ def _mech_runs(kind: str, noise: float) -> dict:
 
 
 def fig_mechanism() -> None:
-    """Gradient mass per gap bin at the last epoch, mislabeled (filled) vs clean (outline)."""
-    rows = _mech_runs("symmetric", 0.4)
-    keys = [k for k in ["softmax", "m4_b0", "small_loss", "gce", "m4", "m4_absgap"] if k in rows]
-    if not keys:
+    """Three per-epoch mechanism readings from the training probe (runs/mechanism, 3 seeds):
+    (a) mislabeled samples rejected, (b) share of the gradient on mislabeled samples,
+    (c) clean samples locked out when there is no noise at all."""
+    sym = _mech_runs("symmetric", 0.4)
+    clean = _mech_runs("symmetric", 0.0)
+    if not sym:
         print("no runs/mechanism data yet: skipping fig5_mechanism")
         return
-    edges = np.linspace(-1, 1, 21)
-    centers = (edges[:-1] + edges[1:]) / 2
-    fig, axes = plt.subplots(2, 3, figsize=(11, 5.6), facecolor=SURFACE, sharex=True, sharey=True)
-    for ax, k in zip(axes.flat, keys):
-        style(ax, "", "")
-        h = [r["history"][-1] for r in rows[k]]
-        fl = np.mean([x["diag_grad_hist_flipped"] for x in h], axis=0) * 100
-        cl = np.mean([x["diag_grad_hist_clean"] for x in h], axis=0) * 100
-        share = mean(x["diag_grad_share_flipped"] * 100 for x in h)
-        ax.bar(centers, fl, width=0.092, color=COLOR[k], zorder=3, label="mislabeled")
-        ax.bar(centers, cl, width=0.092, bottom=fl, color=SURFACE, edgecolor=COLOR[k], linewidth=1,
-               zorder=3, label="clean")
-        ax.axvline(0, color=GRID, linewidth=0.8)
-        ax.set_title(f"{LABEL[k]}: {share:.0f}% of gradient on mislabeled", color=INK2, fontsize=9, loc="left")
-    for ax in axes[1]:
-        ax.set_xlabel("Gap g at the last epoch", color=INK2, fontsize=9.5)
-    for ax in axes[:, 0]:
-        ax.set_ylabel("Gradient mass (%)", color=INK2, fontsize=9.5)
-    axes.flat[0].legend(frameon=False, fontsize=8.5, labelcolor=INK, loc="upper left")
-    n = min(len(v) for v in rows.values())
-    fig.suptitle(f"40% symmetric noise: where each loss puts its gradient (training probe, {n}+ seeds)",
-                 color=INK2, fontsize=9.5, y=0.995)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    panels = [
+        (sym, ["small_loss", "m4", "m4_absgap"], "diag_rejected_flipped",
+         "Mislabeled samples rejected (%)", "(a) 40% symmetric: rejected mislabeled samples"),
+        (sym, ["softmax", "m4_b0", "gce", "m4_absgap"], "diag_grad_share_flipped",
+         "Gradient share on mislabeled (%)", "(b) 40% symmetric: where the gradient goes"),
+        (clean, ["m4", "m4_absgap"], "diag_rejected_clean",
+         "Clean samples rejected (%)", "(c) No noise: clean samples locked out"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.0), facecolor=SURFACE)
+    for ax, (rows, keys, hk, ylab, title) in zip(axes, panels):
+        style(ax, ylab, "Epoch")
+        ends = []
+        for k in keys:
+            recs = rows.get(k, [])
+            if not recs:
+                continue
+            n_ep = min(len(r["history"]) for r in recs)
+            ys = [mean(r["history"][e][hk] * 100 for r in recs) for e in range(n_ep)]
+            ax.plot(range(1, n_ep + 1), ys, color=COLOR[k], linewidth=2, marker="o", markersize=4,
+                    markeredgecolor=SURFACE, markeredgewidth=1.2, label=LABEL[k], zorder=3)
+            ends.append((n_ep, ys[-1], LABEL[k]))
+        ax.set_ylim(0, 100 if hk != "diag_rejected_clean" else 30)
+        direct_labels(ax, ends, min_gap_frac=0.07)
+        ax.set_xticks(range(1, 9))
+        ax.set_xlim(0.7, 12.6)
+        ax.set_title(title, color=INK2, fontsize=9.5, loc="left")
+    n = min(len(v) for v in sym.values())
+    fig.suptitle(f"Training probe, mean of {n} seeds. CE, AS-Softmax and GCE never reject; CE fits 99.7% "
+                 f"of clean training labels without noise", color=INK2, fontsize=9.5, y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     save(fig, "fig5_mechanism")
 
 

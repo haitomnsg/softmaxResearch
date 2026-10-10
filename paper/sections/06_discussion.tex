@@ -13,7 +13,9 @@ including structured noise, where rate-based selection has no reason to pick the
 Third, any margin family with a floor has an \emph{escape region} (\cref{prop:reject}). It
 explains the threshold-shaped strength sweep and the failure of the wider-temperature variant.
 It also identifies a defect of our recipe: the most confidently contradicted labels receive a
-near-maximal gradient toward the wrong class. The remedy is $\beta \ge 1 + \dbase$, which makes
+near-maximal gradient toward the wrong class. The measured footprint is small in population but not
+in gradient. At most 6\% of mislabeled samples reach the region, yet they carry about a fifth of
+the gradient late in training (\cref{sec:mechanism}). The remedy is $\beta \ge 1 + \dbase$, which makes
 the band reach $g = 1$; with $\beta = 1.15$, $\tau = 0.1$ it becomes $[0.032, 1.0)$. We did not
 run it, because the pre-registered protocol froze $\beta$ before Phase~C$'$, and we leave it as a
 stated prediction.
@@ -27,13 +29,17 @@ them). They appear to stand out by disagreement before the pattern is learned (t
 memorizes a quarter).
 The same contrast appears without model selection. The heavier or more structured the noise, the
 larger the absolute rule's last-epoch lead over GCE: $+5.1$ at 60\% symmetric and $+7.1$ at 40\%
-pair-flip.
+pair-flip. Rejection also has a failure mode that down-weighting lacks. A rejected sample gets no
+gradient, so a wrongly rejected clean sample is locked out for good: 23\% of a noise-free training
+set under the batch-relative rule, 13\% under the absolute one. Readmitting rejected samples, for
+instance by periodically relaxing $\beta$, is the obvious remedy; we did not test it.
 
 \paragraph{Limitations.}
 One dataset, one model, one modality, and synthetic noise only. The real-noise benchmark was cut
 by our own pre-registered rule, so the claims above are about 20~Newsgroups with injected noise.
 Five seeds resolve differences of about one point at best: several comparisons we describe
-($+4.9$ over GCE under pair-flip, $-0.95$ at 40\% symmetric) are not established at $p < 0.05$.
+($+4.9$ over GCE under pair-flip, $-0.95$ at 40\% symmetric) are not established at $p < 0.05$,
+and the mechanism readings rest on three seeds and a 1{,}200-sample probe.
 Small-loss is the single-network rule, not Co-teaching's two networks, and DivideMix-style
 semi-supervised pipelines are out of scope, since they are training procedures rather than losses.
 The baselines' tuning grid ran only at 40\% symmetric noise. Training was fixed at 8 epochs with a
@@ -49,6 +55,7 @@ the choice of a margin function. The view makes falsifiable predictions, and the
 pre-registered study. Relative statistics are noise-blind. An absolute ``another class beats the
 label'' statistic rejects a fixed, rate-free band of gaps, memorizes the fewest corrupted labels and
 is the most robust rule under structured noise. A margin floor leaves an escape region that
-shapes how the rule responds to its strength. The absolute rule did not clear our bar against GCE
+shapes how the rule responds to its strength, and rejection without readmission locks hard clean
+samples out of training. The absolute rule did not clear our bar against GCE
 on clean and symmetric noise, and we report it as a unifying account with measured consequences,
 not as a new state of the art.

@@ -14,7 +14,7 @@ workshop instead of the CIFAR-N benchmark. This folder is that write-up.
 
 ## Build
 
-`build.bat` (pdflatex → bibtex → pdflatex ×2) → `main.pdf`, 18 pages; the PDF is committed. MiKTeX 25.12 is installed
+`build.bat` (pdflatex → bibtex → pdflatex ×2) → `main.pdf`, 20 pages; the PDF is committed. MiKTeX 25.12 is installed
 per-user on the research desktop (`%LOCALAPPDATA%\Programs\MiKTeX\miktex\bin\x64`, packages auto-install on first
 use); put that directory on `PATH` first if a shell predates the install. Elsewhere: Overleaf (zip this folder, compiler
 pdfLaTeX, main document `main.tex`) or any TeX Live. Regenerate figures before building if the runs changed:
@@ -28,14 +28,14 @@ pdfLaTeX, main document `main.tex`) or any TeX Live. Regenerate figures before b
 | Table 3 (verdicts) | docs/10 §6 status table, which records each verdict when it was made |
 | Appendix Table (Phases A–B′) | `runs/final_20ng/summary.md` |
 | Fig 1 (geometry), Corollary 2 band values | analytic; checked against the loss in `tests/test_mechanism.py` |
-| §5.4 "Where the gradient goes", Fig 5 | `runs/mechanism/` (`experiments/mechanism.py`, 42 runs, 3 seeds) — **pending** |
+| §5.4 "Where the gradient goes", Fig 5 | `runs/mechanism/` (`experiments/mechanism.py`, 42 runs, 3 seeds) → `runs/mechanism/summary.md` |
 
 `runs/` is gitignored, so the JSONs live only on the research machine.
 
 ## Open items
 
-- [ ] §5.4 mechanism paragraph + `fig5_mechanism` — fill from `runs/mechanism/summary.md` when the sweep finishes.
-- [ ] Appendix Table "Phases": the Phase E outcome cell.
+- [x] §5.4 mechanism paragraph + `fig5_mechanism` (2026-10-10).
+- [x] Appendix Table "Phases": the Phase E outcome cell.
 - [x] First compile (2026-10-09): clean, no undefined references or citations.
 - [ ] Author block (anonymous for double-blind review) and the venue's style file.
 - [ ] Decision for the authors: the escape-region prediction (β = 1.15 closes the band to [0.032, 1.0)) is stated

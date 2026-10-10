@@ -37,8 +37,10 @@ competing methods, and real-world noisy data (CIFAR-10N/100N).
 - **Write-up started (2026-10-09):** the paper draft is in `paper/`. Its main idea: "ignore this example" and "this example is
   already learned" are the same thing inside the loss, so every rule for dropping suspicious examples is a choice of gap. That
   view predicted, before any run, why each version worked where it did and failed where it did. It also found a flaw: the
-  examples whose labels are *most obviously* wrong can never be dropped. A last batch of instrumented runs (~8 h) measures
-  where each method spends its learning effort; its numbers go into the paper when they finish.
+  examples whose labels are *most obviously* wrong can never be dropped. A last batch of instrumented runs (done
+  2026-10-10) showed where each method spends its learning effort. The clearest finding: once a correct example is
+  dropped it gets no further training, so it stays dropped. That is the whole cost on clean data (the batch-relative
+  version locks out almost a quarter of the training set). The paper builds to `paper/main.pdf`.
 - **If gate A fails, we stop again** and write up why. The plan states its kill criteria in advance.
 
 ```

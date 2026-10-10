@@ -61,7 +61,8 @@ noise, and by our own pre-registered criterion it is not a new state-of-the-art 
   $\beta - \dbase$. Each is verified against the implementation in unit tests.
   \item A pre-registered evaluation with five seeds, a realistic model-selection protocol and a
   tuning grid for the baselines. It reports every pre-registered comparison, including the ones the
-  proposed rule loses (\cref{sec:results}).
+  proposed rule loses (\cref{sec:results}). Per-sample gradient instrumentation then locates each
+  effect: rejection rates, the clean-data lockout and the escape region (\cref{sec:mechanism}).
   \item Two negative findings: AS-Softmax memorizes corrupted labels \emph{faster} than
   cross-entropy, and estimating the noise rate with a loss mixture, then rejecting, does worse
   here than rejecting disagreement directly.
